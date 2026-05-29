@@ -1,6 +1,6 @@
 {
   "name": "tracking-validator",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "TSE Tracking Validator — Internal Tool",
   "main": "main.js",
   "scripts": {
@@ -51,9 +51,9 @@
       "icon":     "assets/icon.icns"
     },
     "dmg": {
-      "title":   "Tracking Validator ${version}",
-      "icon":    "assets/icon.icns",
-      "window":  { "width": 540, "height": 380 }
+      "title":      "Tracking Validator ${version}",
+      "background": null,
+      "window":     { "width": 540, "height": 380 }
     }
   }
 }
