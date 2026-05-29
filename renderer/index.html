@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tracking Validator — TSE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Background texture -->
+<div class="bg-texture" aria-hidden="true"></div>
+
+<!-- ── Topbar ─────────────────────────────────────────────────────────────── -->
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="logo-mark">◈</div>
+    <div class="topbar-info">
+      <span class="topbar-name">Tracking Validator</span>
+      <span class="topbar-sub">BY TSE — IMPACT.COM</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <a class="topbar-link" id="hub-link" href="#">TSE Tools</a>
+    <button class="theme-pill" id="theme-toggle" title="Toggle theme">◐</button>
+  </div>
+</header>
+
+<!-- ── Tab nav ────────────────────────────────────────────────────────────── -->
+<nav class="tab-nav" role="tablist">
+  <button class="tab-btn active" data-tab="validator" role="tab" aria-selected="true">Validator</button>
+  <button class="tab-btn" data-tab="howto" role="tab">How-To</button>
+  <button class="tab-btn" data-tab="about" role="tab">About</button>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- VALIDATOR TAB                                                              -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane active" id="tab-validator">
+
+  <!-- ── Input section ──────────────────────────────────────────────────── -->
+  <section class="panel" id="panel-input">
+    <div class="panel-header">
+      <span class="panel-title">Input</span>
+      <div class="panel-header-right">
+        <button class="sql-pill" id="sql-btn" title="Show SQL query to generate input CSV">SQL ⓘ</button>
+        <div class="input-mode-toggle">
+          <button class="mode-btn active" data-mode="paste">Paste / Type</button>
+          <button class="mode-btn" data-mode="file">Upload CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Paste mode -->
+    <div class="input-mode-pane" id="mode-paste">
+      <div class="paste-area-wrap" style="position:relative">
+        <div class="input-actions">
+          <button class="input-undo-btn hidden" id="input-undo" title="Restore cleared input">↶ Undo</button>
+          <button class="input-clear-btn" id="input-clear" title="Clear input">✕ Clear</button>
+        </div>
+        <textarea
+          id="paste-input"
+          class="paste-input"
+          placeholder="Paste CSV or MySQL table output here…
+
+CSV format:
+URL,clickid_param,campaign_id
+https://brand.sjv.io/c/2222/123/456,irclickid,456
+
+MySQL table format:
++-----------------------------+---------------+-------------+
+| URL                         | clickid_param | campaign_id |
++-----------------------------+---------------+-------------+
+| https://brand.sjv.io/c/…   | irclickid     |         456 |
++-----------------------------+---------------+-------------+"
+          spellcheck="false"
+          autocomplete="off"
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- File mode -->
+    <div class="input-mode-pane hidden" id="mode-file">
+      <div class="file-drop-zone" id="file-drop-zone">
+        <div class="file-drop-icon">⬆</div>
+        <div class="file-drop-label">Drop CSV file here</div>
+        <div class="file-drop-sub">or</div>
+        <button class="btn btn-outline" id="file-browse-btn">Browse File</button>
+      </div>
+    </div>
+
+    <!-- Parse preview -->
+    <div class="parse-preview hidden" id="parse-preview">
+      <div class="parse-meta" id="parse-meta"></div>
+      <div class="parse-table-wrap">
+        <table class="parse-table" id="parse-table">
+          <thead>
+            <tr>
+              <th>campaign_id</th>
+              <th>tracking_link</th>
+              <th>click_id_param</th>
+            </tr>
+          </thead>
+          <tbody id="parse-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Parse error -->
+    <div class="parse-error hidden" id="parse-error"></div>
+
+    <!-- Config + actions row -->
+    <div class="input-footer">
+      <div class="config-row">
+        <label class="config-field" title="Number of URLs processed simultaneously. Higher = faster but may trigger rate limiting.">
+          <span class="config-label">Concurrency</span>
+          <input class="config-input" id="cfg-concurrency" type="number" min="1" max="10" value="2">
+        </label>
+        <label class="config-field" title="Milliseconds to wait after page load before capturing results. Increase for slow sites.">
+          <span class="config-label">Wait (ms)</span>
+          <input class="config-input" id="cfg-wait" type="number" min="5000" max="60000" step="1000" value="20000">
+        </label>
+        <label class="config-field" title="How many times to retry a URL if it fails.">
+          <span class="config-label">Retries</span>
+          <input class="config-input" id="cfg-retries" type="number" min="0" max="5" value="1">
+        </label>
+        <label class="config-field" title="Milliseconds between URL batches (plus up to 1s random jitter) to avoid bot detection.">
+          <span class="config-label">Delay (ms)</span>
+          <input class="config-input" id="cfg-delay" type="number" min="0" max="10000" step="500" value="2000">
+        </label>
+      </div>
+
+      <div class="action-row">
+        <button class="btn btn-primary" id="run-btn" disabled>Run</button>
+        <button class="btn btn-danger hidden" id="cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Terminal section ───────────────────────────────────────────────── -->
+  <section class="panel panel-collapsible" id="panel-terminal">
+    <div class="panel-header clickable" id="terminal-header">
+      <span class="panel-title">Terminal</span>
+      <div class="terminal-controls">
+        <span class="terminal-status" id="terminal-status"></span>
+        <button class="terminal-undo" id="terminal-undo" title="Restore cleared terminal output">↶ Undo</button>
+        <button class="terminal-expand-btn" id="terminal-expand" title="Expand terminal">⤢</button>
+        <button class="icon-btn" id="terminal-clear" title="Clear">✕</button>
+        <button class="collapse-btn" id="terminal-collapse" title="Collapse">▾</button>
+      </div>
+    </div>
+    <div class="terminal-body" id="terminal-body">
+      <div class="terminal-output" id="terminal-output"></div>
+    </div>
+  </section>
+
+  <!-- ── Results section ────────────────────────────────────────────────── -->
+  <section class="panel panel-results hidden" id="panel-results">
+    <div class="panel-header">
+      <span class="panel-title">Results</span>
+      <div class="results-controls">
+
+        <!-- Search -->
+        <input type="search" class="results-search" id="results-search"
+               placeholder="Search domain or campaign ID…"
+               autocomplete="off" spellcheck="false">
+
+        <!-- Filter tabs -->
+        <div class="filter-tabs" id="filter-tabs" role="tablist">
+          <button class="filter-tab active" data-filter="all">All <span class="tab-count" id="count-all">0</span></button>
+          <button class="filter-tab" data-filter="UTT">UTT <span class="tab-count" id="count-utt">0</span></button>
+          <button class="filter-tab" data-filter="SHOPIFY">Shopify <span class="tab-count" id="count-shopify">0</span></button>
+          <button class="filter-tab" data-filter="HYBRID">Hybrid <span class="tab-count" id="count-hybrid">0</span></button>
+          <button class="filter-tab" data-filter="CLICKID">ClickId <span class="tab-count" id="count-clickid">0</span></button>
+          <button class="filter-tab" data-filter="unknown">Unknown <span class="tab-count" id="count-unknown">0</span></button>
+          <button class="filter-tab" data-filter="issues">Issues <span class="tab-count" id="count-issues">0</span></button>
+        </div>
+
+        <!-- Export -->
+        <div class="export-group">
+          <button
+            class="btn btn-outline btn-sm"
+            id="export-csv-btn"
+            title="Download results as CSV. Exports rows matching the current filter. Select 'All' to export everything."
+          >↓ CSV</button>
+          <button
+            class="btn btn-outline btn-sm"
+            id="export-sheets-btn"
+            title="Copy as tab-separated values for Google Sheets. Exports rows matching the current filter. Select 'All' to export everything."
+          >⧉ Sheets</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="results-table-wrap" id="results-table-wrap">
+      <table class="results-table" id="results-table">
+        <thead id="results-thead"></thead>
+        <tbody id="results-tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="results-empty hidden" id="results-empty">No results match the current filter.</div>
+  </section>
+
+</div><!-- /tab-validator -->
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- HOW-TO TAB                                                                 -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane hidden" id="tab-howto">
+  <div class="doc-content">
+    <h2>How to Use</h2>
+
+    <div class="howto-step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h3>Generate your input</h3>
+        <p>Run the SQL query (click the <strong>SQL ⓘ</strong> button in the Validator tab) in your database client, substituting <code>{campaign_id}</code> with your target program ID(s). Copy the result.</p>
+        <div class="howto-note">The tool accepts both plain CSV format and MySQL table output (with <code>+---+</code> borders) — paste either directly.</div>
+      </div>
+    </div>
+
+    <div class="howto-step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h3>Paste or upload</h3>
+        <p>Switch between <strong>Paste</strong> and <strong>Upload CSV</strong> using the toggle in the Input panel. After pasting, a preview renders confirming how many URLs were parsed and what was detected.</p>
+      </div>
+    </div>
+
+    <div class="howto-step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h3>Configure and run</h3>
+        <p>Adjust settings if needed then click <strong>Run</strong>. The terminal streams live progress. Results appear in the table as each URL completes — you don't need to wait for the full run.</p>
+        <div class="howto-note">Identity enrichment runs automatically in the background after crawl completes. Rows update in place as identity data resolves — allow up to 7 minutes.</div>
+      </div>
+    </div>
+
+    <div class="howto-step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h3>Read results</h3>
+        <p>Use the filter tabs to view by integration type. Click any row to expand a full detail panel showing cookies, redirect chain, identity IDs, and all raw values.</p>
+        <div class="howto-note">Check results are shown as <strong>✓</strong> (true) / <strong>✗</strong> (false). <strong>WARN</strong> means the check needs attention. <strong>—</strong> means not applicable for this integration type.</div>
+        <div class="howto-warn">A <strong>WARN</strong> on <code>cus_id_present</code> means a CustomerId was passed in an anonymous session — this is a client implementation issue that should be flagged.</div>
+      </div>
+    </div>
+
+    <div class="howto-step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <h3>Export</h3>
+        <p>Use <strong>↓ CSV</strong> to download or <strong>⧉ Sheets</strong> to copy tab-separated values directly into Google Sheets. Both respect the active filter tab.</p>
+      </div>
+    </div>
+
+    <h3>Configuration Settings</h3>
+    <table class="doc-table">
+      <thead><tr><th>Setting</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>Concurrency</td><td>2</td><td>URLs processed simultaneously. Higher is faster but may trigger bot detection on some sites.</td></tr>
+        <tr><td>Wait (ms)</td><td>20000</td><td>Time to wait after page load before capturing results. Increase for slow sites or slow-loading tags.</td></tr>
+        <tr><td>Retries</td><td>1</td><td>Number of retry attempts per URL on navigation failure.</td></tr>
+        <tr><td>Delay (ms)</td><td>2000</td><td>Pause between URL batches, plus up to 1 second of random jitter. Helps avoid bot detection patterns.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Integration Types</h3>
+    <table class="doc-table">
+      <thead><tr><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>UTT</td><td>Impact Universal Tracking Tag — JavaScript tag fires on page, identify call detected.</td></tr>
+        <tr><td>SHOPIFY</td><td>Shopify Plugin — PageLoad API request detected with IntegrationSource: Shopify.</td></tr>
+        <tr><td>Potential Hybrid Integration</td><td>Both UTT and Shopify signals detected, OR UTT identify is passing a Shopify cookie as CustomProfileId. Requires manual validation.</td></tr>
+        <tr><td>UNKNOWN</td><td>No recognisable integration signals detected.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<!-- ABOUT TAB                                                                  -->
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<div class="tab-pane hidden" id="tab-about">
+  <div class="doc-content">
+    <h2>About</h2>
+    <p>The <strong>Tracking Validator</strong> is an internal TSE tool that automates the evaluation of impact.com tracking integrations at scale.</p>
+
+    <p>It navigates to each tracking link using a headless Chromium browser, follows the full redirect chain, and validates the tracking implementation against a defined set of checks — covering UTT tag fires, identify calls, CustomProfileId stitching, cookie placement, consent signals, redirect integrity, and identity graph enrichment.</p>
+
+    <h3>What it checks</h3>
+    <ul class="about-list">
+      <li>Click ID present in redirect chain and tracking payloads</li>
+      <li>UTT JavaScript tag detection and load timing</li>
+      <li>Identify call — path, status, CustomProfileId, CustomerId</li>
+      <li>Cookie matching — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies</li>
+      <li>Shopify Plugin — PageLoad API request, web pixel console signal, consent API</li>
+      <li>Hybrid integration detection</li>
+      <li>Implementation method — GTM, Tealium, Segment, Adobe Launch, or direct</li>
+      <li>Redirect chain with server IP addresses per hop</li>
+      <li>Identity graph enrichment via identity service API</li>
+    </ul>
+
+    <h3>Full documentation</h3>
+    <p>Installation instructions, release notes, and further documentation are available on the <a href="#" class="doc-link" id="hub-page-link">TSE Tools hub page</a>.</p>
+
+    <div class="about-meta">
+      <span>Tracking Validator</span>
+      <span>·</span>
+      <span>TSE — impact.com</span>
+      <span>·</span>
+      <span id="app-version">v1.0.0</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── SQL Modal ───────────────────────────────────────────────────────────── -->
+<div class="modal-overlay hidden" id="sql-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Generate Input CSV</span>
+      <button class="icon-btn" id="sql-modal-close">✕</button>
+    </div>
+    <p class="modal-desc">Run this query in <code>r_ds_multiDb</code>, substituting <code>{campaign_id}</code> with your target program ID(s). Copy the result and paste into the Validator input.</p>
+    <div class="code-block-wrap">
+      <pre class="code-block" id="sql-code"></pre>
+      <button class="copy-btn" id="sql-copy-btn">Copy</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Detail panel (injected dynamically) ────────────────────────────────── -->
+
+<!-- ── Detail Drawer ───────────────────────────────────────────────────────── -->
+<div class="drawer-overlay" id="drawer-overlay"></div>
+<aside class="detail-drawer" id="detail-drawer">
+  <div class="drawer-header">
+    <div class="drawer-header-top">
+      <span class="drawer-title">Result Detail</span>
+      <div class="drawer-header-actions">
+        <button class="drawer-expand-btn" id="drawer-expand" title="Expand drawer width">⇤ Expand</button>
+        <button class="drawer-copy-all" data-copy="__all__">Copy All</button>
+        <button class="icon-btn" id="drawer-close">✕</button>
+      </div>
+    </div>
+    <div class="drawer-header-meta">
+      <span class="drawer-status"></span>
+      <span class="drawer-link"></span>
+    </div>
+  </div>
+  <div class="drawer-body"></div>
+</aside>
+
+<script src="renderer.js"></script>
+</body>
+</html>

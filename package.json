@@ -1,0 +1,51 @@
+{
+  "name": "tracking-validator",
+  "version": "1.0.0",
+  "description": "TSE Tracking Validator — Internal Tool",
+  "main": "main.js",
+  "scripts": {
+    "start":       "electron .",
+    "dev":         "electron . --dev",
+    "build:mac":   "electron-builder --mac",
+    "build:win":   "electron-builder --win",
+    "build:all":   "electron-builder --mac --win"
+  },
+  "dependencies": {
+    "playwright":                       "^1.42.0",
+    "playwright-extra":                 "^4.3.6",
+    "puppeteer-extra-plugin-stealth":   "^2.11.2",
+    "csv-parse":                        "^5.5.3"
+  },
+  "devDependencies": {
+    "electron":         "^30.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId":       "com.impact.tse.tracking-validator",
+    "productName": "Tracking Validator",
+    "copyright":   "TSE — impact.com",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "engine/**/*",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "target":   [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "category": "public.app-category.developer-tools",
+      "icon":     "assets/icon.icns"
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon":   "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick":        false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

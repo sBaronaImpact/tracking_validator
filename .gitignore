@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Playwright browsers (bundled in the packaged app, not committed to git)
+.playwright/
+
+# Electron build output
+dist/
+out/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Config (contains user preferences, not code)
+userData/
+
+# Test output
+test-output/
+
+# Environment
+.env
