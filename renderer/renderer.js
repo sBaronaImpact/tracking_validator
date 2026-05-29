@@ -31,7 +31,9 @@ const COL_GROUPS = [
       { key: 'final_status_code',  label: 'HTTP',                     type: 'http',   w: 48,
         tip: 'HTTP status code of the final landing page. 200-299 is healthy.' },
       { key: 'click_id_in_url',    label: 'Click ID in URL',          type: 'bool',   w: 100,
-        tip: 'Whether the click ID parameter is present in the final landing page URL.' },
+        tip: 'Whether the click ID parameter is present in the final landing page URL as a standalone parameter value.' },
+      { key: 'click_id_embedded',  label: 'CID Embedded',             type: 'bool',   w: 90,
+        tip: 'Whether the click ID appears only embedded within another parameter\'s value (e.g. sourceid=imp_{clickid}) rather than as a standalone parameter (e.g. irclickid={clickid}). When true, the program should be configured with a dedicated {clickid} parameter for reliable attribution.' },
       { key: 'detected_tms',       label: 'Global Tag Mgmt Systems',  type: 'array',  w: 150,
         tip: 'Tag management systems detected loaded on the website (GTM, Tealium, Segment, etc). This is what is present on the site — it does not necessarily mean impact.com tracking is deployed through it.' },
       { key: 'brwsr_cookie',       label: 'brwsr',                    type: 'has',    w: 50,
@@ -40,6 +42,8 @@ const COL_GROUPS = [
         tip: 'Whether ojrq.net appeared in the redirect chain. This is impact\'s browser recognition server — it handles brwsr ID assignment for cross-session tracking. Note: since the crawler runs in a fresh incognito session, the brwsr cookie is never present (it\'s a third-party cookie). Profile Redirect confirms the lookup was attempted, not that a match was found.' },
       { key: 'traffic_guard',      label: 'Traffic Guard',            type: 'bool',   w: 100,
         tip: 'Whether a Traffic Guard redirect (trafficguard.ai) was detected in the chain. Traffic Guard is a third-party click fraud gateway. If the Click ID in URL check failed alongside this, the click ID was likely stripped because the test partner ID (2222) is not a valid live partner for this advertiser.' },
+      { key: 'child_parent_redirect', label: 'Child/Parent',          type: 'bool',   w: 90,
+        tip: 'Whether a child/parent program redirect was detected — the tracking link belongs to a child program that routes through a parent program via a third-party gateway. Check the parent_campaign_id field for the parent program.' },
       { key: 'consent_detected',   label: 'Consent',                  type: 'bool',   w: 58,
         tip: 'Whether a cookie consent banner was detected and accepted on the landing page.' },
     ]
@@ -150,6 +154,26 @@ function computeRemediation(r) {
   }
 
   const notes = [];
+
+  // Click ID embedded only — not configured as a standalone parameter
+  if (r.click_id_embedded) {
+    notes.push(
+      'The click ID is present in the final URL but only embedded within another ' +
+      'parameter\'s value — it is not configured as a standalone parameter. ' +
+      'The impact program should have a dedicated {clickid} parameter in the tracking template ' +
+      'or global URL params (e.g. irclickid={clickid}). Without this, the click ID cannot be ' +
+      'reliably extracted for attribution.'
+    );
+  }
+
+  // Child/parent program redirect
+  if (r.child_parent_redirect) {
+    notes.push(
+      `Child/parent program redirect detected. This tracking link (campaign ID: ${r.campaign_id}) ` +
+      `routes through a parent program (campaign ID: ${r.parent_campaign_id}) via a third-party gateway. ` +
+      `This is noted for awareness — no action required.`
+    );
+  }
 
   // Traffic Guard — must check BEFORE integration-type early returns because
   // it fires at the redirect chain level regardless of whether UTT/Shopify was
@@ -264,19 +288,17 @@ const SQL_QUERY = `select
     concat(sub_tracking_domain,".",tracking_domain)),
     "/c/2222/",ad.id,"/",c.id)) URL
   ,COALESCE(
-    IF(LOCATE('{clickid}', campaign_tracking_template) > 0,
-      IF(LOCATE('&', SUBSTRING_INDEX(campaign_tracking_template, '{clickid}', 1)) = 0,
-        SUBSTRING_INDEX(SUBSTRING_INDEX(campaign_tracking_template, '{clickid}', 1), '=', 1),
-        SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(
-          campaign_tracking_template, '{clickid}', 1), '&', -1), '=', 1)
-      ), NULL
+    IF(LOCATE('={clickid}', campaign_tracking_template) > 0,
+      SUBSTRING_INDEX(
+        SUBSTRING_INDEX(campaign_tracking_template, '={clickid}', 1), '&', -1
+      ),
+      NULL
     ),
-    IF(LOCATE('{clickid}', global_url_params) > 0,
-      IF(LOCATE('&', SUBSTRING_INDEX(global_url_params, '{clickid}', 1)) = 0,
-        SUBSTRING_INDEX(SUBSTRING_INDEX(global_url_params, '{clickid}', 1), '=', 1),
-        SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(
-          global_url_params, '{clickid}', 1), '&', -1), '=', 1)
-      ), NULL
+    IF(LOCATE('={clickid}', global_url_params) > 0,
+      SUBSTRING_INDEX(
+        SUBSTRING_INDEX(global_url_params, '={clickid}', 1), '&', -1
+      ),
+      NULL
     )
   ) as clickid_param
   ,c.id as campaign_id
@@ -835,11 +857,14 @@ function renderDrawer() {
     field('final_url',        r.final_url) +
     field('HTTP status',      r.final_status_code) +
     bool ('click_id_in_url',  r.click_id_in_url) +
+    (r.click_id_embedded ? bool('click_id_embedded', r.click_id_embedded) : '') +
     field('click_id',         r.click_id) +
     field('detected_tms',     Array.isArray(r.detected_tms) ? r.detected_tms.join(', ') : null) +
     field('brwsr_cookie',     r.brwsr_cookie) +
     bool ('profile_redirect', r.profile_redirect) +
-    bool ('traffic_guard',    r.traffic_guard) +
+    bool ('traffic_guard',         r.traffic_guard) +
+    bool ('child_parent_redirect', r.child_parent_redirect) +
+    (r.parent_campaign_id ? field('parent_campaign_id', r.parent_campaign_id) : '') +
     bool ('consent_detected', r.consent_detected) +
     field('integration_type', r.integration_type) +
     (r.crawl_note ? field('crawl_note', r.crawl_note) : '') +
@@ -948,10 +973,13 @@ function buildPlainText(r) {
   add('HTTP status',      r.final_status_code);
   add('click_id_in_url',  r.click_id_in_url);
   add('click_id',         r.click_id);
+  if (r.click_id_embedded) add('click_id_embedded', true);
   add('detected_tms',     Array.isArray(r.detected_tms) ? r.detected_tms.join(', ') : null);
   add('brwsr_cookie',     r.brwsr_cookie);
   add('profile_redirect', r.profile_redirect);
-  add('traffic_guard',    r.traffic_guard);
+  add('traffic_guard',          r.traffic_guard);
+  add('child_parent_redirect',  r.child_parent_redirect);
+  if (r.parent_campaign_id) add('parent_campaign_id', r.parent_campaign_id);
   add('consent_detected', r.consent_detected);
   add('integration_type', r.integration_type);
   if (r.crawl_note)        add('crawl_note',       r.crawl_note);
@@ -1107,9 +1135,9 @@ const EXPORT_GROUPS = [
       'campaign_id', 'tracking_link', 'overall_status', 'integration_type',
       'attempts', 'crawl_note', 'remediation_note',
       'final_url', 'final_status_code',
-      'click_id_in_url', 'click_id', 'click_id_cookie_names',
+      'click_id_in_url', 'click_id', 'click_id_embedded', 'click_id_cookie_names',
       'consent_detected', 'captcha_detected', 'navigation_error',
-      'detected_tms', 'brwsr_cookie', 'profile_redirect', 'traffic_guard', 'redirect_chain',
+      'detected_tms', 'brwsr_cookie', 'profile_redirect', 'traffic_guard', 'child_parent_redirect', 'parent_campaign_id', 'redirect_chain',
     ]
   },
   {

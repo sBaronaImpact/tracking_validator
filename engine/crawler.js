@@ -379,9 +379,22 @@ class Crawler {
       result.profile_redirect = allHops.some(h => h.url && h.url.includes('ojrq.net'));
 
       // Traffic Guard — third-party click fraud protection gateway.
-      // When present and click_id_in_url is false, the click ID was likely
-      // stripped because the test partner ID (2222) is not a valid live partner.
       result.traffic_guard    = allHops.some(h => h.url && h.url.includes('trafficguard.ai'));
+
+      // Child/parent program redirect — a second impact tracking URL with a
+      // different campaign ID in the chain means the child program is routing
+      // through a parent program via a third-party gateway.
+      const trackingPattern = /\/c\/\d+\/\d+\/(\d+)/;
+      const parentHop = allHops.slice(1).find(h => {
+        if (!h.url) return false;
+        const match = h.url.match(trackingPattern);
+        if (!match) return false;
+        return match[1] !== String(result.campaign_id);
+      });
+      if (parentHop) {
+        result.child_parent_redirect = true;
+        result.parent_campaign_id    = parentHop.url.match(trackingPattern)[1];
+      }
 
       // ── Click ID — scan full redirect chain ──────────────────────────
       const allUrls      = allHops.map(h => h.url);
@@ -389,6 +402,25 @@ class Crawler {
       const clickIdFound = findClickIdInUrls(allUrls, clickIdParam);
       result.click_id_in_url = clickIdFound ? STATUS.PASS : STATUS.FAIL;
       result.click_id        = clickIdFound?.value ?? null;
+
+      // ── Click ID embedded detection ───────────────────────────────────
+      // Checks whether the click ID appears only as a substring of another
+      // parameter's value (embedded) rather than as a standalone param value.
+      // e.g. sourceid=imp_ABC123 (embedded) vs irclickid=ABC123 (standalone)
+      if (result.click_id && result.final_url) {
+        try {
+          const finalUrlParsed = new URL(result.final_url);
+          let hasStandalone = false;
+          let hasEmbedded   = false;
+          for (const [, val] of finalUrlParsed.searchParams) {
+            let decoded;
+            try { decoded = decodeURIComponent(val); } catch { decoded = val; }
+            if (decoded === result.click_id)              hasStandalone = true;
+            else if (decoded.includes(result.click_id))   hasEmbedded   = true;
+          }
+          if (hasEmbedded && !hasStandalone) result.click_id_embedded = true;
+        } catch { /* ignore URL parse errors */ }
+      }
 
       // ── TMS detection ────────────────────────────────────────────────
       result.detected_tms = await detectAllTms(page);

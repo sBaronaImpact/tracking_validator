@@ -39,8 +39,11 @@ function createResult(input_url, campaign_id, click_id_param) {
     click_id:                null,
     brwsr_cookie:            null,
     click_id_cookie_names:   null,
-    profile_redirect:        false,  // true when ojrq.net appears in redirect chain
-    traffic_guard:           false,  // true when trafficguard.ai appears in redirect chain
+    click_id_embedded:       false,  // true when click ID only appears embedded in another param, not standalone
+    profile_redirect:        false,
+    traffic_guard:           false,
+    child_parent_redirect:   false,  // true when redirect chain contains a parent program link
+    parent_campaign_id:      null,   // campaign ID of the parent program if detected
     detected_tms:            [],
     crawl_note:              null,
     attempts:                1,     // TMS globals found on page
