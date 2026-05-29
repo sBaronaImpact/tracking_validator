@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#131720"/>
+      <stop offset="100%" stop-color="#090b10"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3ecf8e" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#3ecf8e" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft-glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="node-glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <!-- Subtle glow behind center -->
+  <circle cx="512" cy="512" r="320" fill="url(#glow)"/>
+
+  <!-- Web lines — outer to mid nodes -->
+  <!-- Corner nodes to ring nodes -->
+  <line x1="140" y1="140" x2="300" y2="310" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+  <line x1="884" y1="140" x2="724" y2="310" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+  <line x1="140" y1="884" x2="300" y2="714" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+  <line x1="884" y1="884" x2="724" y2="714" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+
+  <!-- Edge midpoints to ring nodes -->
+  <line x1="512" y1="100" x2="512" y2="290" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+  <line x1="512" y1="924" x2="512" y2="734" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+  <line x1="100" y1="512" x2="290" y2="512" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+  <line x1="924" y1="512" x2="734" y2="512" stroke="#2a3550" stroke-width="2.5" opacity="0.8"/>
+
+  <!-- Ring nodes to center diamond -->
+  <line x1="300" y1="310" x2="440" y2="440" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+  <line x1="724" y1="310" x2="584" y2="440" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+  <line x1="300" y1="714" x2="440" y2="584" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+  <line x1="724" y1="714" x2="584" y2="584" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+  <line x1="512" y1="290" x2="512" y2="420" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+  <line x1="512" y1="734" x2="512" y2="604" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+  <line x1="290" y1="512" x2="420" y2="512" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+  <line x1="734" y1="512" x2="604" y2="512" stroke="#38456a" stroke-width="2" opacity="0.9"/>
+
+  <!-- Outer corner nodes -->
+  <circle cx="140" cy="140" r="10" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+  <circle cx="884" cy="140" r="10" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+  <circle cx="140" cy="884" r="10" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+  <circle cx="884" cy="884" r="10" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+
+  <!-- Edge midpoint nodes -->
+  <circle cx="512" cy="100" r="8" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+  <circle cx="512" cy="924" r="8" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+  <circle cx="100" cy="512" r="8" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+  <circle cx="924" cy="512" r="8" fill="#2a3550" stroke="#38456a" stroke-width="2"/>
+
+  <!-- Mid ring nodes -->
+  <circle cx="300" cy="310" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+  <circle cx="724" cy="310" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+  <circle cx="300" cy="714" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+  <circle cx="724" cy="714" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+  <circle cx="512" cy="290" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+  <circle cx="512" cy="734" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+  <circle cx="290" cy="512" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+  <circle cx="734" cy="512" r="9" fill="#1a2235" stroke="#3ecf8e" stroke-width="1.5" opacity="0.6" filter="url(#node-glow)"/>
+
+  <!-- ◈ center mark — outer square rotated 45° -->
+  <g filter="url(#soft-glow)">
+    <!-- Outer diamond -->
+    <polygon
+      points="512,320 704,512 512,704 320,512"
+      fill="none"
+      stroke="#3ecf8e"
+      stroke-width="18"
+      stroke-linejoin="round"
+      opacity="0.9"
+    />
+    <!-- Inner square (axis-aligned) -->
+    <rect
+      x="414" y="414" width="196" height="196"
+      fill="none"
+      stroke="#3ecf8e"
+      stroke-width="14"
+      stroke-linejoin="round"
+      opacity="0.9"
+    />
+    <!-- Center dot -->
+    <circle cx="512" cy="512" r="28" fill="#3ecf8e" opacity="0.95"/>
+  </g>
+
+  <!-- Subtle topology dot pattern overlay -->
+  <rect width="1024" height="1024" rx="224" fill="none"
+    style="paint-order: stroke"
+  />
+</svg>
