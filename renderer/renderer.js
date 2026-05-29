@@ -1515,6 +1515,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     localStorage.setItem('tv-theme', next);
   });
 
+  // ── Update notification ──────────────────────────────────────────────────────
+  window.api.onUpdateAvailable(({ version, url }) => {
+    const pill = document.getElementById('update-pill');
+    pill.textContent = `⬆ v${version} available`;
+    pill.classList.remove('hidden');
+    pill.addEventListener('click', e => {
+      e.preventDefault();
+      window.api.openExternal(url);
+    });
+  });
+
   // ── Hub links ─────────────────────────────────────────────────────────────
   ['hub-link','hub-page-link'].forEach(id => {
     const el = document.getElementById(id);

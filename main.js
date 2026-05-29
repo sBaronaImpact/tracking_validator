@@ -1,8 +1,12 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
-const path = require('path');
-const fs   = require('fs');
+const path  = require('path');
+const fs    = require('fs');
+const https = require('https');
+
+const REPO_OWNER = 'sBaronaImpact';
+const REPO_NAME  = 'tracking_validator';
 
 // ── Config persistence ─────────────────────────────────────────────────────────
 const CONFIG_PATH    = path.join(app.getPath('userData'), 'tv-config.json');
@@ -26,6 +30,38 @@ function saveConfig(config) {
   } catch { /* ignore */ }
 }
 
+// ── Update check ───────────────────────────────────────────────────────────────
+// Checks the GitHub Releases API for a newer version.
+// No silent install — just notifies the user and links to the release page.
+function checkForUpdates(win) {
+  const url     = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
+  const options = { headers: { 'User-Agent': 'tracking-validator-app', 'Accept': 'application/vnd.github+json' } };
+
+  https.get(url, options, res => {
+    let data = '';
+    res.on('data', chunk => { data += chunk; });
+    res.on('end', () => {
+      try {
+        const release  = JSON.parse(data);
+        const latest   = (release.tag_name || '').replace(/^v/, '');
+        const current  = app.getVersion();
+        if (latest && latest !== current && isNewer(latest, current)) {
+          win.webContents.send('update:available', { version: latest, url: release.html_url });
+        }
+      } catch { /* ignore parse errors */ }
+    });
+  }).on('error', () => { /* ignore network errors — update check is best-effort */ });
+}
+
+function isNewer(latest, current) {
+  const parse = v => v.split('.').map(Number);
+  const [lMaj, lMin, lPat] = parse(latest);
+  const [cMaj, cMin, cPat] = parse(current);
+  if (lMaj !== cMaj) return lMaj > cMaj;
+  if (lMin !== cMin) return lMin > cMin;
+  return lPat > cPat;
+}
+
 // ── Window ─────────────────────────────────────────────────────────────────────
 let mainWindow   = null;
 let activeCrawler = null;
@@ -46,6 +82,12 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  // Check for updates 3 seconds after launch (non-blocking)
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(() => checkForUpdates(mainWindow), 3000);
+  });
+
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -64,6 +106,8 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('config:get', ()       => loadConfig());
 ipcMain.handle('config:set', (_, cfg) => { saveConfig(cfg); return true; });
+ipcMain.handle('app:version',  ()     => app.getVersion());
+ipcMain.handle('shell:open', (_, url) => shell.openExternal(url));
 
 ipcMain.handle('dialog:open-csv', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
@@ -99,8 +143,6 @@ ipcMain.handle('crawl:cancel', () => {
   if (activeCrawler) activeCrawler.cancel();
   return { ok: true };
 });
-
-ipcMain.handle('shell:open', (_, url) => shell.openExternal(url));
 
 // Strip internal _raw before sending over IPC
 function sanitize(result) {
