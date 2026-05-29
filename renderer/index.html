@@ -218,35 +218,38 @@ MySQL table format:
       <div class="step-num">1</div>
       <div class="step-body">
         <h3>Generate your input</h3>
-        <p>Run the SQL query (click the <strong>SQL ⓘ</strong> button in the Validator tab) in your database client, substituting <code>{campaign_id}</code> with your target program ID(s). Copy the result.</p>
-        <div class="howto-note">The tool accepts both plain CSV format and MySQL table output (with <code>+---+</code> borders) — paste either directly.</div>
+        <p>Run the SQL query (click the <strong>SQL ⓘ</strong> button in the Validator tab) in <code>r_ds_multiDb</code>, substituting <code>{campaign_id}</code> with your target program ID(s). Copy the result.</p>
+        <div class="howto-note">The tool accepts both plain CSV format and MySQL table output (with <code>+---+</code> borders) — paste either directly. You can also upload a CSV file using the <strong>Upload CSV</strong> toggle.</div>
+        <div class="howto-note">CSV column order: <code>URL, clickid_param, campaign_id</code>. Example: <code>https://brand.sjv.io/c/2222/123/456,irclickid,456</code></div>
       </div>
     </div>
 
     <div class="howto-step">
       <div class="step-num">2</div>
       <div class="step-body">
-        <h3>Paste or upload</h3>
-        <p>Switch between <strong>Paste</strong> and <strong>Upload CSV</strong> using the toggle in the Input panel. After pasting, a preview renders confirming how many URLs were parsed and what was detected.</p>
+        <h3>Configure and run</h3>
+        <p>Adjust settings if needed, then click <strong>Run</strong>. The terminal streams live progress. Results appear in the table as each URL completes — you don't need to wait for the full batch.</p>
+        <div class="howto-note">Identity enrichment runs automatically in the background after crawl completes. Rows update in place as identity data resolves — allow up to 7 minutes.</div>
+        <div class="howto-warn">All crawls use test partner ID <strong>2222</strong> in the tracking URL. Some programs use Traffic Guard, which will strip the click ID when the partner ID is not recognised. If this occurs, test with partner ID <strong>1111</strong> or a live link instead.</div>
       </div>
     </div>
 
     <div class="howto-step">
       <div class="step-num">3</div>
       <div class="step-body">
-        <h3>Configure and run</h3>
-        <p>Adjust settings if needed then click <strong>Run</strong>. The terminal streams live progress. Results appear in the table as each URL completes — you don't need to wait for the full run.</p>
-        <div class="howto-note">Identity enrichment runs automatically in the background after crawl completes. Rows update in place as identity data resolves — allow up to 7 minutes.</div>
+        <h3>Read results</h3>
+        <p>Use the filter tabs to view by integration type or status. Click any row to open the detail drawer — showing cookies, redirect chain, identity graph data, and a <strong>Recommended Action</strong> when issues are detected.</p>
+        <div class="howto-note">Check results are shown as <strong>✓</strong> (pass) / <strong>✗</strong> (fail) / <strong>—</strong> (not applicable for this integration type).</div>
+        <div class="howto-warn">A <strong>⚠</strong> on <code>CustomerId</code> means a CustomerId was passed in an anonymous session — this should only fire post-authentication. Flag to client and advise using <code>CustomProfileId</code> instead.</div>
       </div>
     </div>
 
     <div class="howto-step">
       <div class="step-num">4</div>
       <div class="step-body">
-        <h3>Read results</h3>
-        <p>Use the filter tabs to view by integration type. Click any row to expand a full detail panel showing cookies, redirect chain, identity IDs, and all raw values.</p>
-        <div class="howto-note">Check results are shown as <strong>✓</strong> (true) / <strong>✗</strong> (false). <strong>WARN</strong> means the check needs attention. <strong>—</strong> means not applicable for this integration type.</div>
-        <div class="howto-warn">A <strong>WARN</strong> on <code>cus_id_present</code> means a CustomerId was passed in an anonymous session — this is a client implementation issue that should be flagged.</div>
+        <h3>Review recommended actions</h3>
+        <p>The <strong>Remediation</strong> column and the <strong>Recommended Action</strong> section in the detail drawer provide actionable guidance for each result. These are generated automatically based on the check outcomes — no issues means no note.</p>
+        <div class="howto-note">Remediation notes are included in CSV and Sheets exports in the <code>remediation_note</code> column.</div>
       </div>
     </div>
 
@@ -254,9 +257,24 @@ MySQL table format:
       <div class="step-num">5</div>
       <div class="step-body">
         <h3>Export</h3>
-        <p>Use <strong>↓ CSV</strong> to download or <strong>⧉ Sheets</strong> to copy tab-separated values directly into Google Sheets. Both respect the active filter tab.</p>
+        <p>Use <strong>↓ CSV</strong> to download or <strong>⧉ Sheets</strong> to copy tab-separated values directly into Google Sheets. Both respect the active filter tab — export only what's visible.</p>
+        <div class="howto-note">The <strong>Copy All</strong> button in the detail drawer generates a plain-text dump of all fields for a single result — useful for pasting into tickets or Slack.</div>
       </div>
     </div>
+
+    <h3>Filter Tabs</h3>
+    <table class="doc-table">
+      <thead><tr><th>Filter</th><th>Shows</th></tr></thead>
+      <tbody>
+        <tr><td>All</td><td>Every result in the current run.</td></tr>
+        <tr><td>UTT</td><td>Programs using the Universal Tracking Tag only.</td></tr>
+        <tr><td>Shopify</td><td>Programs using the Shopify Plugin only.</td></tr>
+        <tr><td>Hybrid</td><td>Programs where both UTT and Shopify signals were detected, or UTT is using a Shopify cookie as CustomProfileId.</td></tr>
+        <tr><td>ClickId</td><td>Programs where the click ID was found in a cookie but no UTT or Shopify tracking was detected. May indicate CAPI or a custom integration.</td></tr>
+        <tr><td>Unknown</td><td>No recognisable integration signals detected. May indicate a custom implementation — verify manually.</td></tr>
+        <tr><td>Issues</td><td>Results with FAIL or SKIP status (CAPTCHA, timeout, navigation error). Does not include Unknown.</td></tr>
+      </tbody>
+    </table>
 
     <h3>Configuration Settings</h3>
     <table class="doc-table">
@@ -264,7 +282,7 @@ MySQL table format:
       <tbody>
         <tr><td>Concurrency</td><td>2</td><td>URLs processed simultaneously. Higher is faster but may trigger bot detection on some sites.</td></tr>
         <tr><td>Wait (ms)</td><td>20000</td><td>Time to wait after page load before capturing results. Increase for slow sites or slow-loading tags.</td></tr>
-        <tr><td>Retries</td><td>1</td><td>Number of retry attempts per URL on navigation failure.</td></tr>
+        <tr><td>Retries</td><td>1</td><td>Number of retry attempts per URL on navigation failure. Only the final result is shown.</td></tr>
         <tr><td>Delay (ms)</td><td>2000</td><td>Pause between URL batches, plus up to 1 second of random jitter. Helps avoid bot detection patterns.</td></tr>
       </tbody>
     </table>
@@ -273,10 +291,22 @@ MySQL table format:
     <table class="doc-table">
       <thead><tr><th>Type</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td>UTT</td><td>Impact Universal Tracking Tag — JavaScript tag fires on page, identify call detected.</td></tr>
-        <tr><td>SHOPIFY</td><td>Shopify Plugin — PageLoad API request detected with IntegrationSource: Shopify.</td></tr>
-        <tr><td>Potential Hybrid Integration</td><td>Both UTT and Shopify signals detected, OR UTT identify is passing a Shopify cookie as CustomProfileId. Requires manual validation.</td></tr>
-        <tr><td>UNKNOWN</td><td>No recognisable integration signals detected.</td></tr>
+        <tr><td>UTT</td><td>Impact Universal Tracking Tag — JavaScript library detected on page with a valid Identify call.</td></tr>
+        <tr><td>SHOPIFY</td><td>Shopify Plugin — PageLoad API request detected with IntegrationSource: Shopify, or web pixel console signal detected.</td></tr>
+        <tr><td>Potential Hybrid Integration</td><td>Both UTT and Shopify Plugin signals detected simultaneously (redundant), OR UTT Identify is passing a Shopify session cookie (<code>_shopify_y</code>) as CustomProfileId (legitimate single-method integration).</td></tr>
+        <tr><td>ClickId Integration</td><td>Click ID stored as a cookie but no UTT or Shopify Plugin detected. Client may be using click ID strictly for attribution via CAPI or a custom conversion method.</td></tr>
+        <tr><td>UNKNOWN</td><td>No recognisable integration signals detected. May indicate a custom or unsupported implementation — verify manually.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Redirect Chain Signals</h3>
+    <table class="doc-table">
+      <thead><tr><th>Signal</th><th>What it means</th></tr></thead>
+      <tbody>
+        <tr><td>Profile Redirect</td><td>ojrq.net appeared in the redirect chain — impact's browser recognition server was contacted. Confirms brwsr ID lookup was attempted (note: brwsr cookie will always be absent in the crawler's incognito session).</td></tr>
+        <tr><td>Traffic Guard</td><td>trafficguard.ai appeared in the redirect chain. If click ID is also missing from the final URL, the test partner ID (2222) was likely rejected — test with 1111 or a live link.</td></tr>
+        <tr><td>Child/Parent</td><td>A second impact tracking URL with a different campaign ID was found in the redirect chain, indicating a child program routing through a parent program. Noted for awareness — no action required.</td></tr>
+        <tr><td>CID Embedded</td><td>The click ID value was found embedded within another URL parameter (e.g. <code>sourceid=imp_{clickid}</code>) but not as a standalone parameter. The program should be configured with a dedicated <code>{clickid}</code> parameter.</td></tr>
       </tbody>
     </table>
   </div>
@@ -288,21 +318,27 @@ MySQL table format:
 <div class="tab-pane hidden" id="tab-about">
   <div class="doc-content">
     <h2>About</h2>
-    <p>The <strong>Tracking Validator</strong> is an internal TSE tool that automates the evaluation of impact.com tracking integrations at scale.</p>
-
-    <p>It navigates to each tracking link using a headless Chromium browser, follows the full redirect chain, and validates the tracking implementation against a defined set of checks — covering UTT tag fires, identify calls, CustomProfileId stitching, cookie placement, consent signals, redirect integrity, and identity graph enrichment.</p>
+    <p>The <strong>Tracking Validator</strong> is an internal TSE tool that automates the evaluation of impact.com tracking integrations at scale. It navigates to each tracking link using a headless Chromium browser, follows the full redirect chain, and validates the tracking implementation against a comprehensive set of checks.</p>
 
     <h3>What it checks</h3>
     <ul class="about-list">
-      <li>Click ID present in redirect chain and tracking payloads</li>
-      <li>UTT JavaScript tag detection and load timing</li>
-      <li>Identify call — path, status, CustomProfileId, CustomerId</li>
-      <li>Cookie matching — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies</li>
-      <li>Shopify Plugin — PageLoad API request, web pixel console signal, consent API</li>
-      <li>Hybrid integration detection</li>
-      <li>Implementation method — GTM, Tealium, Segment, Adobe Launch, or direct</li>
-      <li>Redirect chain with server IP addresses per hop</li>
-      <li>Identity graph enrichment via identity service API</li>
+      <li><strong>Click ID</strong> — present in final URL as standalone parameter, and whether it appears only embedded in another parameter's value</li>
+      <li><strong>UTT</strong> — JavaScript library detection, load timing, and Identify call (path, status, CustomProfileId, CustomerId, click ID in payload)</li>
+      <li><strong>Shopify Plugin</strong> — PageLoad API request, web pixel console signal, consent API, integration source</li>
+      <li><strong>Cookies</strong> — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, brwsr</li>
+      <li><strong>Implementation method</strong> — GTM, Tealium, Segment, Adobe Launch, or direct</li>
+      <li><strong>Redirect chain</strong> — full hop-by-hop with server IP addresses, profile redirect (ojrq.net), Traffic Guard, child/parent program routing</li>
+      <li><strong>Identity graph</strong> — enrichment via identity service API, consumer ID, PRO/FPC/CLI node resolution</li>
+      <li><strong>Remediation</strong> — rule-based actionable recommendations generated automatically for each result</li>
+    </ul>
+
+    <h3>Limitations</h3>
+    <ul class="about-list">
+      <li>Crawls run in a fresh incognito session — brwsr cookie will never be present (third-party cookie)</li>
+      <li>CAPTCHA-protected sites will block the headless browser — manual validation required for those results</li>
+      <li>All links use test partner ID <strong>2222</strong> — Traffic Guard may reject this for some programs</li>
+      <li>Sites with aggressive bot detection may time out or return unexpected results even when working correctly</li>
+      <li>Custom or server-side integrations (CAPI, trackConversion) are not detectable on the landing page and will appear as UNKNOWN or ClickId Integration</li>
     </ul>
 
     <h3>Full documentation</h3>
