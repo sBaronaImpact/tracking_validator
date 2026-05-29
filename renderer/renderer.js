@@ -1554,7 +1554,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ── Hub links ─────────────────────────────────────────────────────────────
+  // ── App version ──────────────────────────────────────────────────────────────
+  window.api.getVersion().then(v => {
+    const el = document.getElementById('app-version');
+    if (el) el.textContent = `v${v}`;
+  }).catch(() => {});
   ['hub-link','hub-page-link'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', e => {
