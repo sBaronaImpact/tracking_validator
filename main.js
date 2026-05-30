@@ -107,15 +107,12 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Check for updates 3 seconds after launch.
-  // Use did-finish-load but guard against the race where it already fired.
-  if (mainWindow.webContents.isLoading()) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      setTimeout(() => checkForUpdates(mainWindow), 3000);
-    });
-  } else {
-    setTimeout(() => checkForUpdates(mainWindow), 3000);
-  }
+  // Check for updates after renderer signals it's fully initialised.
+  // This avoids the race where webContents.send fires before the
+  // onUpdateAvailable listener is registered in the renderer.
+  ipcMain.once('renderer:ready', () => {
+    setTimeout(() => checkForUpdates(mainWindow), 1000);
+  });
 
   mainWindow.on('closed', () => { mainWindow = null; });
 }

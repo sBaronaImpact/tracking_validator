@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // App
   getVersion:   ()      => ipcRenderer.invoke('app:version'),
+  rendererReady:()      => ipcRenderer.send('renderer:ready'),
 
   // Config
   getConfig:  ()      => ipcRenderer.invoke('config:get'),

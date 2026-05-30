@@ -1593,4 +1593,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.api.openExternal('https://fastshoes.co.za/scott/tools/tracking_validator/');
   });
 
+  // Signal main process — all IPC listeners are now registered
+  window.api.rendererReady();
+
 });
