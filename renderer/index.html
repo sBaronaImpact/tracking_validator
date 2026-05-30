@@ -220,7 +220,8 @@ MySQL table format:
         <h3>Generate your input</h3>
         <p>Run the SQL query (click the <strong>SQL ⓘ</strong> button in the Validator tab) in <code>r_ds_multiDb</code>, substituting <code>{campaign_id}</code> with your target program ID(s). Copy the result.</p>
         <div class="howto-note">The tool accepts both plain CSV format and MySQL table output (with <code>+---+</code> borders) — paste either directly. You can also upload a CSV file using the <strong>Upload CSV</strong> toggle.</div>
-        <div class="howto-note">CSV column order: <code>URL, clickid_param, campaign_id</code>. Example: <code>https://brand.sjv.io/c/2222/123/456,irclickid,456</code></div>
+        <div class="howto-note">CSV column order: <code>URL, clickid_param, campaign_id</code></div>
+        <div class="howto-note">Example: <code>https://brand.sjv.io/c/2222/123/456,irclickid,456</code></div>
       </div>
     </div>
 
@@ -240,6 +241,7 @@ MySQL table format:
         <h3>Read results</h3>
         <p>Use the filter tabs to view by integration type or status. Click any row to open the detail drawer — showing cookies, redirect chain, identity graph data, and a <strong>Recommended Action</strong> when issues are detected.</p>
         <div class="howto-note">Check results are shown as <strong>✓</strong> (pass) / <strong>✗</strong> (fail) / <strong>—</strong> (not applicable for this integration type).</div>
+        <div class="howto-note">When a click ID is detected, an <strong>↗ Event Repository</strong> button appears in the results table and the detail drawer. Click it to open the internal Event Repository for that click ID — shows clicks, impressions, and conversion events.</div>
         <div class="howto-warn">A <strong>⚠</strong> on <code>CustomerId</code> means a CustomerId was passed in an anonymous session — this should only fire post-authentication. Flag to client and advise using <code>CustomProfileId</code> instead.</div>
       </div>
     </div>
@@ -322,7 +324,7 @@ MySQL table format:
 
     <h3>What it checks</h3>
     <ul class="about-list">
-      <li><strong>Click ID</strong> — present in final URL as standalone parameter, and whether it appears only embedded in another parameter's value</li>
+      <li><strong>Click ID</strong> — present in final URL as standalone parameter, and whether it appears only embedded in another parameter's value; click IDs link to the internal Event Repository</li>
       <li><strong>UTT</strong> — JavaScript library detection, load timing, and Identify call (path, status, CustomProfileId, CustomerId, click ID in payload)</li>
       <li><strong>Shopify Plugin</strong> — PageLoad API request, web pixel console signal, consent API, integration source</li>
       <li><strong>Cookies</strong> — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, brwsr</li>
@@ -342,7 +344,7 @@ MySQL table format:
     </ul>
 
     <h3>Full documentation</h3>
-    <p>Installation instructions, release notes, and further documentation are available on the <a href="#" class="doc-link" id="hub-page-link">TSE Tools hub page</a>.</p>
+    <p>Installation instructions, release notes, and further documentation are available on the <a href="https://fastshoes.co.za/scott/tools/tracking_validator/" class="doc-link" id="hub-page-link">Tracking Validator download page</a>.</p>
 
     <div class="about-meta">
       <span>Tracking Validator</span>

@@ -35,7 +35,14 @@ function saveConfig(config) {
 // No silent install — just notifies the user and links to the release page.
 function checkForUpdates(win) {
   const url     = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
-  const options = { headers: { 'User-Agent': 'tracking-validator-app', 'Accept': 'application/vnd.github+json' } };
+  const options = {
+    headers: {
+      'User-Agent':    'tracking-validator-app',
+      'Accept':        'application/vnd.github+json',
+      'Authorization': 'Bearer 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',
+    },
+    rejectUnauthorized: false,
+  };
 
   https.get(url, options, res => {
     let data = '';
@@ -46,7 +53,10 @@ function checkForUpdates(win) {
         const latest   = (release.tag_name || '').replace(/^v/, '');
         const current  = app.getVersion();
         if (latest && latest !== current && isNewer(latest, current)) {
-          win.webContents.send('update:available', { version: latest, url: release.html_url });
+          win.webContents.send('update:available', {
+            version: latest,
+            url:     'https://fastshoes.co.za/scott/tools/tracking_validator/',
+          });
         }
       } catch { /* ignore parse errors */ }
     });
@@ -83,10 +93,29 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  // Check for updates 3 seconds after launch (non-blocking)
-  mainWindow.webContents.once('did-finish-load', () => {
-    setTimeout(() => checkForUpdates(mainWindow), 3000);
+  // Open all external https:// links in the system browser, not inside Electron
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
   });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('https://') || url.startsWith('http://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  // Check for updates 3 seconds after launch.
+  // Use did-finish-load but guard against the race where it already fired.
+  if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => checkForUpdates(mainWindow), 3000);
+    });
+  } else {
+    setTimeout(() => checkForUpdates(mainWindow), 3000);
+  }
 
   mainWindow.on('closed', () => { mainWindow = null; });
 }

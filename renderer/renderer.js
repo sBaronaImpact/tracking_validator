@@ -34,6 +34,8 @@ const COL_GROUPS = [
         tip: 'Whether the click ID parameter is present in the final landing page URL as a standalone parameter value.' },
       { key: 'click_id_embedded',  label: 'CID Embedded',             type: 'bool',   w: 90,
         tip: 'Whether the click ID appears only embedded within another parameter\'s value (e.g. sourceid=imp_{clickid}) rather than as a standalone parameter (e.g. irclickid={clickid}). When true, the program should be configured with a dedicated {clickid} parameter for reliable attribution.' },
+      { key: 'click_id',           label: 'Event Repository',                   type: 'events', w: 48,
+        tip: 'Opens the Event Repository for this click ID — shows clicks, impressions, and conversion events.' },
       { key: 'detected_tms',       label: 'Global Tag Mgmt Systems',  type: 'array',  w: 150,
         tip: 'Tag management systems detected loaded on the website (GTM, Tealium, Segment, etc). This is what is present on the site — it does not necessarily mean impact.com tracking is deployed through it.' },
       { key: 'brwsr_cookie',       label: 'brwsr',                    type: 'has',    w: 50,
@@ -417,7 +419,9 @@ function renderCell(result, col) {
         return `<span style="font-size:11px;color:var(--text-muted)" data-tip="${esc(raw)}">direct</span>`;
       return `<span class="tms-tag" data-tip="${esc(raw)}">${esc(trunc(raw, 20))}</span>`;
 
-    case 'note':
+    case 'events':
+      if (!raw) return `<span class="bool-na">—</span>`;
+      return `<button class="events-btn" data-eid="${esc(raw)}" title="View Event Repository for this click ID">↗ ER</button>`;
       // Crawl note — show first sentence, full text on hover
       if (!raw) return `<span class="bool-na">—</span>`;
       return `<span class="crawl-note-text" data-tip="${esc(raw)}">${esc(trunc(raw.split('\n')[0], 80))}</span>`;
@@ -858,7 +862,12 @@ function renderDrawer() {
     field('HTTP status',      r.final_status_code) +
     bool ('click_id_in_url',  r.click_id_in_url) +
     (r.click_id_embedded ? bool('click_id_embedded', r.click_id_embedded) : '') +
-    field('click_id',         r.click_id) +
+    (r.click_id
+      ? '<div class="dv-field"><div class="dv-label">click_id</div><div class="dv-value" style="display:flex;align-items:center;gap:10px">' +
+        '<span style="user-select:all;word-break:break-all">' + esc(r.click_id) + '</span>' +
+        '<button class="events-btn" data-eid="' + esc(r.click_id) + '" style="flex-shrink:0">↗ ER</button>' +
+        '</div></div>'
+      : field('click_id', null)) +
     field('detected_tms',     Array.isArray(r.detected_tms) ? r.detected_tms.join(', ') : null) +
     field('brwsr_cookie',     r.brwsr_cookie) +
     bool ('profile_redirect', r.profile_redirect) +
@@ -973,6 +982,7 @@ function buildPlainText(r) {
   add('HTTP status',      r.final_status_code);
   add('click_id_in_url',  r.click_id_in_url);
   add('click_id',         r.click_id);
+  if (r.click_id) add('events_url', 'https://er-api.gcp.srv-impact.net/events.html?id=' + encodeURIComponent(r.click_id));
   if (r.click_id_embedded) add('click_id_embedded', true);
   add('detected_tms',     Array.isArray(r.detected_tms) ? r.detected_tms.join(', ') : null);
   add('brwsr_cookie',     r.brwsr_cookie);
@@ -1559,12 +1569,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     const el = document.getElementById('app-version');
     if (el) el.textContent = `v${v}`;
   }).catch(() => {});
-  ['hub-link','hub-page-link'].forEach(id => {
+
+  // ── Events link — Event Repository ─────────────────────────────
+  const EVENTS_BASE = 'https://er-api.gcp.srv-impact.net/events.html?id=';
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.events-btn');
+    if (btn) {
+      e.stopPropagation();
+      window.api.openExternal(EVENTS_BASE + encodeURIComponent(btn.dataset.eid));
+    }
+  });
+
+  ['hub-link'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', e => {
       e.preventDefault();
       window.api.openExternal('https://fastshoes.co.za/scott/tools/');
     });
+  });
+  const dlLink = document.getElementById('hub-page-link');
+  if (dlLink) dlLink.addEventListener('click', e => {
+    e.preventDefault();
+    window.api.openExternal('https://fastshoes.co.za/scott/tools/tracking_validator/');
   });
 
 });
