@@ -36,12 +36,11 @@
       "engine/**/*",
       "node_modules/**/*",
       "!node_modules/playwright/test/**/*",
-      "!node_modules/.cache/**/*",
-      "!node_modules/playwright/.local-browsers/**/*"
+      "!node_modules/.cache/**/*"
     ],
     "extraResources": [
       {
-        "from": "node_modules/playwright/.local-browsers",
+        "from": "pw-browsers",
         "to":   "chromium",
         "filter": ["**/*"]
       }
