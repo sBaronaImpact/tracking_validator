@@ -6,7 +6,8 @@ on:
       - 'v*'          # triggers on any tag like v1.0.0, v1.1.0, etc.
 
 jobs:
-  build-mac:
+  # arm64 runs first — creates the GitHub release and uploads its DMG
+  build-arm64:
     runs-on: macos-latest
     timeout-minutes: 60
 
@@ -34,21 +35,56 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
 
-      - name: Verify Chromium bundled correctly
-        run: |
-          echo "=== pw-browsers contents ==="
-          ls pw-browsers/ 2>/dev/null || echo "NOT FOUND"
-          echo "=== Chromium binary ==="
-          find pw-browsers -name "chrome-headless-shell" 2>/dev/null | head -5 || echo "binary not found"
-
-      - name: Build & publish DMG
+      - name: Build & publish arm64 DMG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run release
+        run: npx electron-builder --mac --arm64 --publish always
 
-      - name: Upload DMG as artifact (backup)
+      - name: Upload arm64 DMG as artifact (backup)
         uses: actions/upload-artifact@v4
         with:
-          name: tracking-validator-dmg
+          name: tracking-validator-arm64
+          path: dist/*arm64.dmg
+          retention-days: 30
+
+  # x64 runs after arm64 — release already exists, just uploads its DMG
+  build-x64:
+    needs: build-arm64
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Sync version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "Building version $VERSION"
+          npm version $VERSION --no-git-tag-version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
+
+      - name: Build & publish x64 DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --mac --x64 --publish always
+
+      - name: Upload x64 DMG as artifact (backup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tracking-validator-x64
           path: dist/*.dmg
           retention-days: 30
