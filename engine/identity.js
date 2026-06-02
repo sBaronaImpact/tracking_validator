@@ -16,17 +16,25 @@ function determineLookupStrategy(result) {
   const type = result.integration_type;
 
   if (type === INTEGRATION_TYPE.UTT || type === INTEGRATION_TYPE.HYBRID) {
-    const irPi = result._raw?.ir_pi;
-    if (!irPi?.value) return null;
-    const profileId = extractIrPiProfileId(irPi.value);
-    if (!profileId) return null;
-    return { value: profileId, type: '_PRO' };
+    const irPi      = result._raw?.ir_pi;
+    const profileId = irPi?.value ? extractIrPiProfileId(irPi.value) : null;
+    const cliValue  = result.utt?.cli_value || null;
+
+    if (profileId) {
+      // Primary: PRO lookup via IR_PI. Fallback to CLI if a CustomProfileId value is available.
+      return { value: profileId, type: '_PRO', fallback: cliValue ? { value: cliValue, type: '_CLI' } : null };
+    }
+    if (cliValue) {
+      // No IR_PI — use CLI directly
+      return { value: cliValue, type: '_CLI', fallback: null };
+    }
+    return null;
   }
 
   if (type === INTEGRATION_TYPE.SHOPIFY) {
     const cpid = result.shopify?.cli_value;
     if (!cpid) return null;
-    return { value: cpid, type: '_CLI' };
+    return { value: cpid, type: '_CLI', fallback: null };
   }
 
   return null;
@@ -91,6 +99,7 @@ class IdentityQueue {
       lookup_value: strategy.value,
       lookup_type:  strategy.type,
       attempts:    0,
+      fallback:    strategy.fallback || null,
     });
 
     if (!this.running) this._drain();
@@ -99,7 +108,7 @@ class IdentityQueue {
   _naReason(result) {
     const type = result.integration_type;
     if (type === INTEGRATION_TYPE.UTT || type === INTEGRATION_TYPE.HYBRID)
-      return 'IR_PI cookie not found — identity enrichment skipped';
+      return 'IR_PI cookie and CustomProfileId (CLI) not found — identity enrichment skipped';
     if (type === INTEGRATION_TYPE.SHOPIFY)
       return 'cli_value not found in PageLoad payload — identity enrichment skipped';
     return 'Integration type unknown — identity enrichment skipped';
@@ -166,6 +175,26 @@ class IdentityQueue {
     if (item.attempts < MAX_ATTEMPTS) {
       await new Promise(r => setTimeout(r, RETRY_INTERVAL_MS));
       this.queue.unshift(item);
+    } else if (!error && item.fallback) {
+      // PRO lookup exhausted with no matching data — fall back to CLI (CustomProfileId)
+      const fb       = item.fallback;
+      const endpoint = buildEndpoint(item.campaign_id, fb.value, fb.type);
+      this.onUpdate(item.resultId, {
+        status:       'pending',
+        attempts:     0,
+        lookup_value: fb.value,
+        lookup_type:  fb.type,
+        endpoint,
+        note:         'PRO lookup returned no data — retrying with CLI (CustomProfileId) lookup',
+      });
+      this.queue.unshift({
+        ...item,
+        endpoint,
+        lookup_value: fb.value,
+        lookup_type:  fb.type,
+        attempts:     0,
+        fallback:     null,
+      });
     } else {
       this.onUpdate(item.resultId, {
         status:       error ? 'FAIL' : 'WARN',

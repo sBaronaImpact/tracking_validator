@@ -1,5 +1,19 @@
 'use strict';
 
+const path = require('path');
+
+// When running as a packaged Electron app, point Playwright at the Chromium
+// binary bundled into Resources/chromium — not the user's local playwright
+// cache which won't exist on a fresh install.
+// Must be set BEFORE playwright is required, as Playwright reads this env var
+// at module load time when initialising its browser registry.
+try {
+  const { app } = require('electron');
+  if (app?.isPackaged) {
+    process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(process.resourcesPath, 'chromium');
+  }
+} catch { /* not in Electron context (e.g. running tests directly) — use system playwright */ }
+
 // Use playwright-extra for stealth plugin support.
 // Falls back to standard playwright if playwright-extra is not installed.
 let chromium;

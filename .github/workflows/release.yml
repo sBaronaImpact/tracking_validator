@@ -31,6 +31,8 @@ jobs:
 
       - name: Install Playwright Chromium
         run: npx playwright install chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: 0
 
       - name: Build & publish DMG
         env:
