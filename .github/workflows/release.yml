@@ -34,6 +34,16 @@ jobs:
         env:
           PLAYWRIGHT_BROWSERS_PATH: 0
 
+      - name: Verify Chromium install location
+        run: |
+          echo "=== node_modules/playwright/.local-browsers ==="
+          ls node_modules/playwright/.local-browsers 2>/dev/null || echo "NOT FOUND"
+          echo "=== node_modules/playwright/.local-chromium ==="
+          ls node_modules/playwright/.local-chromium 2>/dev/null || echo "NOT FOUND"
+          echo "=== PLAYWRIGHT_BROWSERS_PATH resolved ==="
+          npx playwright --version
+          find node_modules/playwright -name "chrome-headless-shell" 2>/dev/null | head -5 || echo "binary not found in node_modules"
+
       - name: Build & publish DMG
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
