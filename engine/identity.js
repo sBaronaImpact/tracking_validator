@@ -4,8 +4,9 @@ const { STATUS, INTEGRATION_TYPE } = require('./result');
 const { extractIrPiProfileId }     = require('./checks/cookies');
 
 const IDENTITY_ENDPOINT = 'https://identity.gcp.srv-impact.net/identityServiceMulti';
-const MAX_ATTEMPTS      = 7;
-const RETRY_INTERVAL_MS = 60_000;
+const MAX_ATTEMPTS      = 10;
+const RETRY_INTERVAL_MS = 30_000;
+const CONCURRENCY       = 15;  // Parallel identity lookups in flight at once.
 
 function buildEndpoint(campaign_id, lookupValue, lookupType) {
   const id = encodeURIComponent(`${lookupValue}${lookupType}`);
@@ -55,7 +56,7 @@ function parseResponse(data, campaign_id) {
   const ids    = Array.isArray(record.ids) ? record.ids : [];
   return {
     consumer_id: record.impactConsumerId || null,
-    ids:         ids.join('\n'),   // newline-separated string
+    ids:         ids.join('\n'),
     cli_node:    ids.some(id => id.endsWith(`_CLI${campaign_id}`)),
     fpc_node:    ids.some(id => id.endsWith(`_FPC${campaign_id}`)),
     pro_node:    ids.some(id => id.endsWith(`_PRO${campaign_id}`)),
@@ -67,9 +68,27 @@ class IdentityQueue {
     this.onUpdate       = onUpdate;
     this.onQueueDrained = onQueueDrained || null;
     this.queue          = [];
-    this.running        = false;
+    this.workers        = 0;
     this._pending       = 0;
     this._finalized     = false;
+    this._stopped       = false;
+  }
+
+  /**
+   * User-initiated stop. Drains all pending items immediately with a "stopped"
+   * status. Items currently in-flight (awaiting fetch or in retry sleep) will
+   * notice the flag on their next await checkpoint and terminate.
+   */
+  stop() {
+    if (this._stopped) return;
+    this._stopped = true;
+
+    // Terminate all items still in the queue immediately
+    while (this.queue.length > 0) {
+      const item = this.queue.shift();
+      this._terminateAsStopped(item);
+    }
+    // In-flight items will hit a checkpoint and self-terminate
   }
 
   finalize() {
@@ -78,6 +97,16 @@ class IdentityQueue {
   }
 
   enqueue(result) {
+    if (this._stopped) {
+      // Lookups arriving after stop go straight to N/A
+      this.onUpdate(result.id, {
+        status: STATUS.NA,
+        attempts: 0,
+        note: 'Identity enrichment stopped by user',
+      });
+      return;
+    }
+
     this._pending++;
     const strategy = determineLookupStrategy(result);
 
@@ -102,7 +131,7 @@ class IdentityQueue {
       fallback:    strategy.fallback || null,
     });
 
-    if (!this.running) this._drain();
+    this._startWorkers();
   }
 
   _naReason(result) {
@@ -114,28 +143,63 @@ class IdentityQueue {
     return 'Integration type unknown — identity enrichment skipped';
   }
 
+  _terminateAsStopped(item) {
+    this.onUpdate(item.resultId, {
+      status:       STATUS.NA,
+      attempts:     item.attempts,
+      lookup_value: item.lookup_value,
+      lookup_type:  item.lookup_type,
+      endpoint:     item.endpoint,
+      note:         'Identity enrichment stopped by user',
+    });
+    this._resolve();
+  }
+
   _resolve() {
     this._pending--;
     this._checkDrained();
   }
 
   _checkDrained() {
-    if (this._finalized && this._pending <= 0 && !this.running && this.onQueueDrained) {
+    if (this._finalized && this._pending <= 0 && this.workers === 0 && this.onQueueDrained) {
       this.onQueueDrained();
     }
   }
 
-  async _drain() {
-    this.running = true;
-    while (this.queue.length > 0) {
-      const item = this.queue.shift();
-      await this._process(item);
+  _startWorkers() {
+    while (this.workers < CONCURRENCY && this.queue.length > 0) {
+      this.workers++;
+      this._worker();
     }
-    this.running = false;
-    this._checkDrained();
+  }
+
+  async _worker() {
+    try {
+      while (!this._stopped) {
+        const item = this.queue.shift();
+        if (!item) {
+          // Queue is empty. If fully finalized with nothing pending, we're done.
+          if (this._finalized && this._pending === 0) break;
+          // Otherwise exit this worker — _startWorkers() will spawn a fresh one
+          // when new work arrives via _scheduleRetry. Avoids accumulating idle
+          // polling workers that burn CPU indefinitely.
+          break;
+        }
+        if (this._stopped) {
+          this._terminateAsStopped(item);
+          continue;
+        }
+        await this._process(item);
+      }
+    } finally {
+      this.workers--;
+      this._checkDrained();
+    }
   }
 
   async _process(item) {
+    if (this._stopped) { this._terminateAsStopped(item); return; }
+
     item.attempts++;
     this.onUpdate(item.resultId, {
       status:       'pending',
@@ -145,16 +209,17 @@ class IdentityQueue {
       endpoint:     item.endpoint,
       note:         item.attempts === 1
         ? 'Identity enrichment in progress — results update as data becomes available'
-        : `Retrying (${item.attempts}/${MAX_ATTEMPTS}) — allow up to 1 minute`,
+        : `Retrying (${item.attempts}/${MAX_ATTEMPTS}) — 30s between attempts`,
     });
 
     try {
-      const data   = await fetchIdentity(item.endpoint);
+      const data = await fetchIdentity(item.endpoint);
+      if (this._stopped) { this._terminateAsStopped(item); return; }
       const parsed = parseResponse(data, item.campaign_id);
 
       if (parsed) {
         this.onUpdate(item.resultId, {
-          status:       'PASS',  // explicit string — identity.status is a process state, not a check result
+          status:       'PASS',
           attempts:     item.attempts,
           lookup_value: item.lookup_value,
           lookup_type:  item.lookup_type,
@@ -167,16 +232,21 @@ class IdentityQueue {
       }
       await this._scheduleRetry(item, null);
     } catch (error) {
+      if (this._stopped) { this._terminateAsStopped(item); return; }
       await this._scheduleRetry(item, error);
     }
   }
 
   async _scheduleRetry(item, error) {
+    if (this._stopped) { this._terminateAsStopped(item); return; }
+
     if (item.attempts < MAX_ATTEMPTS) {
       await new Promise(r => setTimeout(r, RETRY_INTERVAL_MS));
+      if (this._stopped) { this._terminateAsStopped(item); return; }
       this.queue.unshift(item);
+      this._startWorkers();
     } else if (!error && item.fallback) {
-      // PRO lookup exhausted with no matching data — fall back to CLI (CustomProfileId)
+      // PRO lookup exhausted with no matching data — fall back to CLI
       const fb       = item.fallback;
       const endpoint = buildEndpoint(item.campaign_id, fb.value, fb.type);
       this.onUpdate(item.resultId, {
@@ -195,6 +265,7 @@ class IdentityQueue {
         attempts:     0,
         fallback:     null,
       });
+      this._startWorkers();
     } else {
       this.onUpdate(item.resultId, {
         status:       error ? 'FAIL' : 'WARN',

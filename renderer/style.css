@@ -722,8 +722,8 @@ body::before {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
-  width: max-content;
   min-width: 100%;
+  /* NOTE: do NOT set width: max-content — it breaks position:sticky on table cells in Chromium */
 }
 
 /* Frozen header — generic sticky behavior shared by both rows */
@@ -735,21 +735,88 @@ body::before {
   white-space: nowrap;
   user-select: none;
 }
-/* Stack the two header rows so both stay visible while scrolling */
-.results-table thead tr.group-header-row th { top: 0; }
-.results-table thead tr.col-header-row   th { top: 28px; }
+/* Stack header rows vertically. z-index: 5 on non-frozen so frozen cells always win. */
+.results-table thead tr.group-header-row th { top: 0;    z-index: 5; }
+.results-table thead tr.col-header-row   th { top: 30px; z-index: 5; }
 
-/* Frozen first 4 columns — read --rbg from parent <tr> for opaque background
-   Order: # | CampaignId | CampaignName | Status (positions: 0px / 36px / 116px / 256px) */
-.results-table .col-frozen-0 { position: sticky; left: 0;     z-index: 15; background: var(--rbg, var(--bg-card)); }
-.results-table .col-frozen-1 { position: sticky; left: 36px;  z-index: 15; background: var(--rbg, var(--bg-card)); }
-.results-table .col-frozen-2 { position: sticky; left: 116px; z-index: 15; background: var(--rbg, var(--bg-card)); }
-.results-table .col-frozen-3 { position: sticky; left: 256px; z-index: 15; background: var(--rbg, var(--bg-card)); }
-/* Thead frozen cells need explicit solid background */
+/* Frozen column widths — defined here AND enforced by <colgroup> in index.html. */
+.results-table {
+  --col-w-0:  36px;
+  --col-w-1:  96px;
+  --col-w-2: 140px;
+  --col-w-3:  64px;
+}
+
+/* <col> elements set widths — use explicit px, not variables (col CSS support is limited) */
+.results-table .col-def-0 { width: 36px; }
+.results-table .col-def-1 { width: 96px; }
+.results-table .col-def-2 { width: 140px; }
+.results-table .col-def-3 { width: 64px; }
+
+.results-table .col-frozen-0 {
+  position: sticky; left: 0;
+  width: var(--col-w-0); min-width: var(--col-w-0); max-width: var(--col-w-0);
+  z-index: 15; background: var(--rbg, var(--bg-card));
+}
+.results-table .col-frozen-1 {
+  position: sticky; left: var(--col-w-0);
+  width: var(--col-w-1); min-width: var(--col-w-1); max-width: var(--col-w-1);
+  z-index: 15; background: var(--rbg, var(--bg-card));
+}
+.results-table .col-frozen-2 {
+  position: sticky; left: calc(var(--col-w-0) + var(--col-w-1));
+  width: var(--col-w-2); min-width: var(--col-w-2); max-width: var(--col-w-2);
+  z-index: 15; background: var(--rbg, var(--bg-card));
+}
+.results-table .col-frozen-3 {
+  position: sticky; left: calc(var(--col-w-0) + var(--col-w-1) + var(--col-w-2));
+  width: var(--col-w-3); min-width: var(--col-w-3); max-width: var(--col-w-3);
+  z-index: 15; background: var(--rbg, var(--bg-card));
+}
+/* Frozen thead — !important beats the specificity of thead tr.group-header-row th */
 .results-table thead .col-frozen-0,
 .results-table thead .col-frozen-1,
 .results-table thead .col-frozen-2,
-.results-table thead .col-frozen-3 { z-index: 25; background: var(--bg-input); }
+.results-table thead .col-frozen-3 { z-index: 30 !important; background: var(--bg-input); }
+
+/* Summary band */
+.results-table thead .col-frozen-group-label {
+  position: sticky;
+  z-index: 31 !important;
+  background: var(--text-muted) !important;
+  border-right: none !important;
+  border-left: none !important;
+  color: var(--bg) !important;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  white-space: nowrap;
+  overflow: visible !important;
+}
+/* col-frozen-0 gets highest z-index so its overflowing Summary div
+   paints ABOVE the backgrounds of col-frozen-1/2/3 (which are siblings
+   in the same stacking context but come later in DOM order) */
+.results-table thead .col-frozen-0.col-frozen-group-label { left: 0;                                             z-index: 35 !important; }
+.results-table thead .col-frozen-1.col-frozen-group-label { left: var(--col-w-0);                                z-index: 34 !important; }
+.results-table thead .col-frozen-2.col-frozen-group-label { left: calc(var(--col-w-0) + var(--col-w-1));         z-index: 33 !important; }
+.results-table thead .col-frozen-3.col-frozen-group-label { left: calc(var(--col-w-0) + var(--col-w-1) + var(--col-w-2)); z-index: 32 !important;
+  border-right: 1px solid var(--border) !important; }
+
+/* Prevent content overflowing frozen data cells (not the group label cells) */
+.results-table tbody .col-frozen-0,
+.results-table tbody .col-frozen-1,
+.results-table tbody .col-frozen-2,
+.results-table tbody .col-frozen-3,
+.results-table thead tr.col-header-row .col-frozen-0,
+.results-table thead tr.col-header-row .col-frozen-1,
+.results-table thead tr.col-header-row .col-frozen-2,
+.results-table thead tr.col-header-row .col-frozen-3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Group header row */
 .group-header-row th {
@@ -771,7 +838,7 @@ body::before {
 
 /* Group color variants — colored BACKGROUND BAND on group header row only.
    Column header row underneath uses neutral text; only the left-divider picks up group color. */
-.group-header-row th.grp-action,
+.group-header-row th.grp-action    { background: var(--blue);      color: #ffffff; }
 .group-header-row th.grp-link,
 .group-header-row th.grp-general,
 .group-header-row th.grp-notes     { background: var(--text-muted); color: var(--bg); }
@@ -780,7 +847,7 @@ body::before {
 .group-header-row th.grp-identity  { background: var(--cyan);   color: #0b1118; }
 
 /* Light mode — text contrast adjusted for lighter background fills */
-[data-theme="light"] .group-header-row th.grp-action,
+[data-theme="light"] .group-header-row th.grp-action    { background: #1a4a6a; color: #ffffff; }
 [data-theme="light"] .group-header-row th.grp-link,
 [data-theme="light"] .group-header-row th.grp-general,
 [data-theme="light"] .group-header-row th.grp-notes     { background: #6a6a82; color: #ffffff; }
@@ -796,7 +863,7 @@ body::before {
 .group-header-row th.grp-identity.group-start,
 .col-header-row   th.grp-identity.group-start { border-left: 2px solid var(--cyan); }
 .group-header-row th.grp-action.group-start,
-.col-header-row   th.grp-action.group-start,
+.col-header-row   th.grp-action.group-start   { border-left: 2px solid var(--blue); }
 .group-header-row th.grp-link.group-start,
 .col-header-row   th.grp-link.group-start,
 .group-header-row th.grp-general.group-start,
@@ -808,7 +875,7 @@ body::before {
 .results-table tbody td.grp-utt.group-start      { border-left: 2px solid var(--purple); }
 .results-table tbody td.grp-shopify.group-start  { border-left: 2px solid var(--blue); }
 .results-table tbody td.grp-identity.group-start { border-left: 2px solid var(--cyan); }
-.results-table tbody td.grp-action.group-start,
+.results-table tbody td.grp-action.group-start   { border-left: 2px solid var(--blue); }
 .results-table tbody td.grp-link.group-start,
 .results-table tbody td.grp-general.group-start,
 .results-table tbody td.grp-notes.group-start   { border-left: 2px solid var(--text-muted); }
@@ -1092,7 +1159,10 @@ body::before {
   background: var(--cyan); color: #0b1118;
   padding: 6px 10px; border-radius: 3px;
 }
-.dv-section-title.grp-action,
+.dv-section-title.grp-action {
+  background: var(--blue); color: #ffffff;
+  padding: 6px 10px; border-radius: 3px;
+}
 .dv-section-title.grp-general,
 .dv-section-title.grp-notes {
   background: var(--text-muted); color: var(--bg);
@@ -1101,7 +1171,7 @@ body::before {
 [data-theme="light"] .dv-section-title.grp-utt      { background: #7c6af7; color: #ffffff; }
 [data-theme="light"] .dv-section-title.grp-shopify  { background: #1a4a6a; color: #ffffff; }
 [data-theme="light"] .dv-section-title.grp-identity { background: #0891b2; color: #ffffff; }
-[data-theme="light"] .dv-section-title.grp-action,
+[data-theme="light"] .dv-section-title.grp-action   { background: #1a4a6a; color: #ffffff; }
 [data-theme="light"] .dv-section-title.grp-general,
 [data-theme="light"] .dv-section-title.grp-notes    { background: #6a6a82; color: #ffffff; }
 
@@ -1663,20 +1733,30 @@ body::before {
 }
 .results-table tbody td.remediation-cell.is-warn { color: var(--warn-text); }
 
-/* Pulse glow when row has an unresolved issue with a recommendation */
+/* Pulse glow when row has an unresolved issue with a recommendation.
+   Uses opacity on a pseudo-element (GPU compositable) rather than box-shadow (triggers repaint). */
 .results-table tbody td.remediation-cell.is-attention {
-  animation: remediation-pulse 2.4s ease-in-out infinite;
+  position: relative;
+}
+.results-table tbody td.remediation-cell.is-attention::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-left: 3px solid var(--amber);
+  opacity: 0;
+  animation: remediation-pulse 2.8s ease-in-out infinite;
+  pointer-events: none;
+  will-change: opacity;
 }
 @keyframes remediation-pulse {
-  0%, 100% { box-shadow: inset 0 0 0 0 rgba(245,166,35,0); }
-  50%      { box-shadow: inset 3px 0 12px -2px rgba(245,166,35,0.45); }
+  0%, 100% { opacity: 0; }
+  50%       { opacity: 1; }
 }
-[data-theme="light"] .results-table tbody td.remediation-cell.is-attention {
-  animation-name: remediation-pulse-light;
-}
-@keyframes remediation-pulse-light {
-  0%, 100% { box-shadow: inset 0 0 0 0 rgba(138,88,0,0); }
-  50%      { box-shadow: inset 3px 0 12px -2px rgba(138,88,0,0.35); }
+
+/* Suppress all animations during an active crawl to prevent WindowServer saturation.
+   body.is-running is added by JS when startCrawl() fires and removed on finishCrawl(). */
+body.is-running .results-table tbody td.remediation-cell.is-attention::after {
+  animation: none;
 }
 
 /* ── Update notification pill ──────────────────────────────────────────────── */
@@ -1762,3 +1842,272 @@ body::before {
 }
 
 [data-theme="light"] .doc-table td { color: var(--text); }
+/* ════════════════════════════════════════════════════════════════════════════ */
+/* WALKTHROUGH MODE                                                             */
+/* ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Mode toggle in topbar ─────────────────────────────────────────────────── */
+.mode-toggle {
+  display: flex;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.mode-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.04em;
+}
+.mode-toggle-btn:hover { color: var(--text); }
+.mode-toggle-btn.active {
+  background: var(--accent);
+  color: #090b10;
+  font-weight: 600;
+}
+[data-theme="light"] .mode-toggle-btn.active { color: #ffffff; }
+[data-theme="warm"]  .mode-toggle-btn.active { color: #1a1612; }
+
+/* ── Walkthrough container ─────────────────────────────────────────────────── */
+#walkthrough-container {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 8px 0 32px;
+}
+
+/* Steps — each one is a card. Only the active step is visible. */
+.guided-step {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px 36px;
+  margin-bottom: 16px;
+  animation: step-fade-in 0.25s ease;
+}
+.guided-step.hidden { display: none; }
+
+@keyframes step-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Step header — pill + title + instruction */
+.step-header {
+  margin-bottom: 24px;
+}
+
+.step-pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(62,207,142,0.08);
+  border: 1px solid var(--accent);
+  padding: 3px 10px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+[data-theme="light"] .step-pill { color: var(--accent); background: rgba(42,122,90,0.08); }
+[data-theme="warm"]  .step-pill { color: var(--accent); background: rgba(62,207,142,0.10); }
+
+.step-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+  letter-spacing: 0.01em;
+}
+
+.step-instruction {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.step-instruction code {
+  background: var(--bg-input);
+  border: 1px solid var(--border-dim);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* Step 1 — Campaign ID textarea */
+.wt-textarea {
+  width: 100%;
+  min-height: 140px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 14px 16px;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.wt-textarea:focus { border-color: var(--accent); }
+.wt-textarea::placeholder { color: var(--text-dim); }
+
+/* Step meta lines — "3 IDs detected", "29 URLs detected", etc. */
+.wt-meta {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 12px;
+  letter-spacing: 0.04em;
+  min-height: 16px;
+}
+.wt-meta.error { color: var(--fail-text); }
+
+/* Step actions — right-aligned button row */
+.step-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-dim);
+}
+
+/* Step 3 — input mode toggle (Upload CSV / Paste) */
+.wt-input-mode-toggle {
+  display: inline-flex;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+  margin-bottom: 16px;
+}
+
+.wt-input-pane { margin-bottom: 12px; }
+
+/* Step 4 — config section */
+.wt-config-section {
+  background: var(--bg-input);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-top: 20px;
+}
+
+.wt-config-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.wt-config-sublabel {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim);
+}
+
+/* Pulse animation on the Run button in step 4 — uses transform (GPU compositable) */
+.btn-pulse {
+  animation: btn-pulse-glow 2s ease-in-out infinite;
+}
+@keyframes btn-pulse-glow {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%       { transform: scale(1.03); opacity: 0.85; }
+}
+/* Suppress during active crawl */
+body.is-running .btn-pulse {
+  animation: none;
+}
+
+/* Steps 5 & 6 — banner-style sections */
+.step-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 20px;
+}
+
+.step-banner-running {
+  border-left: 4px solid var(--cyan);
+}
+.step-banner-complete {
+  border-left: 4px solid var(--accent);
+}
+
+.step-banner-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  width: 40px;
+  text-align: center;
+}
+.step-banner-running .step-banner-icon {
+  color: var(--cyan);
+  animation: banner-icon-pulse 1.8s ease-in-out infinite;
+  will-change: opacity;
+}
+.step-banner-complete .step-banner-icon {
+  color: var(--accent);
+}
+
+@keyframes banner-icon-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.step-banner-body { flex: 1; }
+
+.step-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.step-banner-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.step-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Workbench mode: hide walkthrough container ────────────────────────────── */
+body[data-mode="workbench"] #walkthrough-container { display: none; }
+
+/* ── Walkthrough mode: hide workbench input panel ──────────────────────────── */
+body[data-mode="walkthrough"] #panel-input { display: none; }
+
+/* During walkthrough steps 1-4, hide terminal + results panels (not in flow yet) */
+body[data-mode="walkthrough"][data-step="1"] #panel-terminal,
+body[data-mode="walkthrough"][data-step="2"] #panel-terminal,
+body[data-mode="walkthrough"][data-step="3"] #panel-terminal,
+body[data-mode="walkthrough"][data-step="4"] #panel-terminal,
+body[data-mode="walkthrough"][data-step="1"] #panel-results,
+body[data-mode="walkthrough"][data-step="2"] #panel-results,
+body[data-mode="walkthrough"][data-step="3"] #panel-results,
+body[data-mode="walkthrough"][data-step="4"] #panel-results {
+  display: none;
+}

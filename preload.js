@@ -15,8 +15,9 @@ contextBridge.exposeInMainWorld('api', {
   openCsv:    ()      => ipcRenderer.invoke('dialog:open-csv'),
 
   // Crawl
-  startCrawl: (urls, config) => ipcRenderer.invoke('crawl:start', { urls, config }),
-  cancelCrawl:()      => ipcRenderer.invoke('crawl:cancel'),
+  startCrawl:   (urls, config) => ipcRenderer.invoke('crawl:start', { urls, config }),
+  cancelCrawl:  ()             => ipcRenderer.invoke('crawl:cancel'),
+  stopIdentity: ()             => ipcRenderer.invoke('identity:stop'),
 
   // Event streams (main → renderer)
   onLog:             fn => ipcRenderer.on('crawl:log',       (_, v) => fn(v)),

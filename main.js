@@ -170,6 +170,17 @@ ipcMain.handle('crawl:cancel', () => {
   return { ok: true };
 });
 
+ipcMain.handle('identity:stop', () => {
+  // Crawler must expose identityQueue (set in constructor as this.identityQueue).
+  // Calling stop() drains the queue immediately — in-flight lookups self-terminate
+  // at their next await checkpoint; queued items are resolved to N/A instantly.
+  if (activeCrawler?.identityQueue?.stop) {
+    activeCrawler.identityQueue.stop();
+    return { ok: true };
+  }
+  return { error: 'No active identity queue' };
+});
+
 // Strip internal _raw before sending over IPC
 function sanitize(result) {
   const { _raw, ...rest } = result;

@@ -5,7 +5,7 @@
 // ══════════════════════════════════════════════════════════════════════════════
 const state = {
   results:     [],       // all result objects
-  parsed:      [],       // parsed input URLs [{url,clickIdParam,campaignId}]
+  parsed:      [],       // parsed input URLs [{url,clickIdParam,campaignId,campaignName}]
   filter:      'all',    // 'all'|'UTT'|'SHOPIFY'|'HYBRID'|'issues'
   running:        false,
   cancelRequested:false,
@@ -17,6 +17,12 @@ const state = {
   config:         {},
   detailId:    null,     // ID of result shown in detail drawer (null = closed)
   theme:       'dark',
+  // ── Walkthrough mode ────────────────────────────────────────────────────
+  mode:        'walkthrough',  // 'walkthrough' | 'workbench'
+  guidedStep:  1,              // 1..6 — only used in walkthrough
+  campaignIds: [],             // step 1 output, used to populate step 2 SQL
+  autoDownloaded: false,       // guard so step 6 only auto-downloads once per crawl
+  identityStopped: false,      // true when user manually stops identity enrichment
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -31,15 +37,10 @@ const COL_GROUPS = [
     ]
   },
   {
-    id: 'link', label: 'Tracking Link', always: true,
+    id: 'general', label: 'General', always: true,
     cols: [
       { key: 'input_url', label: 'Tracking Link', type: 'url', w: 220,
         tip: 'The tracking link as input. Click any row to open the detail panel.' },
-    ]
-  },
-  {
-    id: 'general', label: 'General', always: true,
-    cols: [
       { key: 'final_url',          label: 'Final URL',                type: 'url',    w: 200,
         tip: 'The final landing page URL after all redirects resolve.' },
       { key: 'final_status_code',  label: 'HTTP',                     type: 'http',   w: 48,
@@ -710,38 +711,46 @@ function renderTable() {
     empty.classList.remove('hidden');
     thead.innerHTML = '';
     tbody.innerHTML = '';
-    // Still restore pane scroll on empty filter
+    renderTable._lastGroupKey = '';
     requestAnimationFrame(() => { if (tabPane) tabPane.scrollTop = paneTop; });
     return;
   }
   empty.classList.add('hidden');
 
-  // ── Header rows ────────────────────────────────────────────────────────────
-  let groupHtml = '<tr class="group-header-row">';
-  let colHtml   = '<tr class="col-header-row">';
+  // ── Header rows — only rebuild when visible group set changes ───────────────
+  // During live crawl updates only tbody changes; skipping thead saves significant DOM work.
+  const groupKey = groups.map(g => g.id).join(',');
+  if (groupKey !== renderTable._lastGroupKey) {
+    renderTable._lastGroupKey = groupKey;
 
-  // Fixed columns: #, CampaignId, CampaignName, Status (4 frozen)
-  groupHtml += '<th colspan="4" style="text-align:left">·</th>';
-  colHtml   += '<th class="col-frozen-0" style="min-width:36px">#</th>';
-  colHtml   += '<th class="col-frozen-1" style="min-width:80px" data-tip="The impact.com campaign (program) ID for this tracking link.">CampaignId</th>';
-  colHtml   += '<th class="col-frozen-2" style="min-width:140px" data-tip="The campaign (program) name from impact.com.">CampaignName</th>';
-  colHtml   += '<th class="col-frozen-3" style="min-width:60px">Status</th>';
+    let groupHtml = '<tr class="group-header-row">';
+    let colHtml   = '<tr class="col-header-row">';
 
-  // Group columns
-  groups.forEach((grp, gi) => {
-    const startCls = gi === 0 ? '' : 'group-start';
-    const grpCls   = `grp-${grp.id}`;
-    groupHtml += `<th colspan="${grp.cols.length}" class="${startCls} ${grpCls}">${grp.label}</th>`;
-    grp.cols.forEach((col, ci) => {
-      const cls = (ci === 0 && gi > 0 ? 'group-start ' : '') + grpCls;
-      const tip = col.tip ? esc(col.tip) : col.key;
-      colHtml += `<th class="${cls}" style="min-width:${col.w}px" data-tip="${tip}">${col.label}</th>`;
+    const frozenBandWidth = 36 + 96 + 140 + 64;
+    groupHtml += `<th class="col-frozen-0 col-frozen-group-label"><div style="width:${frozenBandWidth}px;text-align:center;letter-spacing:0.1em;font-weight:700;font-size:10px;text-transform:uppercase">Summary</div></th>`;
+    groupHtml += '<th class="col-frozen-1 col-frozen-group-label"></th>';
+    groupHtml += '<th class="col-frozen-2 col-frozen-group-label"></th>';
+    groupHtml += '<th class="col-frozen-3 col-frozen-group-label"></th>';
+    colHtml   += '<th class="col-frozen-0">#</th>';
+    colHtml   += '<th class="col-frozen-1" data-tip="The impact.com campaign (program) ID for this tracking link.">CampaignId</th>';
+    colHtml   += '<th class="col-frozen-2" data-tip="The campaign (program) name from impact.com.">CampaignName</th>';
+    colHtml   += '<th class="col-frozen-3">Status</th>';
+
+    groups.forEach((grp, gi) => {
+      const startCls = gi === 0 ? '' : 'group-start';
+      const grpCls   = `grp-${grp.id}`;
+      groupHtml += `<th colspan="${grp.cols.length}" class="${startCls} ${grpCls}">${grp.label}</th>`;
+      grp.cols.forEach((col, ci) => {
+        const cls = (ci === 0 && gi > 0 ? 'group-start ' : '') + grpCls;
+        const tip = col.tip ? esc(col.tip) : col.key;
+        colHtml += `<th class="${cls}" style="min-width:${col.w}px" data-tip="${tip}">${col.label}</th>`;
+      });
     });
-  });
 
-  groupHtml += '</tr>';
-  colHtml   += '</tr>';
-  thead.innerHTML = groupHtml + colHtml;
+    groupHtml += '</tr>';
+    colHtml   += '</tr>';
+    thead.innerHTML = groupHtml + colHtml;
+  }
 
   // ── Data rows ──────────────────────────────────────────────────────────────
   const rows = filtered.map((r, i) => {
@@ -992,6 +1001,8 @@ function renderDrawer() {
   }
 
   drawer.querySelector('.drawer-body').innerHTML = html;
+  // Always start at the top — drawers retain scroll position otherwise
+  drawer.querySelector('.drawer-body').scrollTop = 0;
   drawer.querySelector('.drawer-link').textContent = r.input_url;
   drawer.querySelector('.drawer-status').innerHTML = renderStatusBadge(r.overall_status);
 
@@ -1126,11 +1137,16 @@ function updateCounts() {
   }).length;
 
   // Enable Re-run Issues only when there are issues AND a crawl isn't running
+  const issueCount = getRerunCandidates().length;
   const rerunBtn = document.getElementById('rerun-issues-btn');
   if (rerunBtn) {
-    const issueCount = getRerunCandidates().length;
     rerunBtn.disabled = state.running || issueCount === 0;
     rerunBtn.textContent = issueCount > 0 ? `↻ Re-run Issues (${issueCount})` : '↻ Re-run Issues';
+  }
+  const wtRerunBtn = document.getElementById('wt-step6-rerun');
+  if (wtRerunBtn) {
+    wtRerunBtn.disabled = state.running || issueCount === 0;
+    wtRerunBtn.textContent = issueCount > 0 ? `↻ Re-run Issues (${issueCount})` : '↻ Re-run Issues';
   }
 }
 
@@ -1404,26 +1420,31 @@ function flattenResult(r) {
   return { keys, values: keys.map(get) };
 }
 
-function exportCsv() {
-  const filtered = filteredResults();
-  if (!filtered.length) return;
+function exportCsv(opts = {}) {
+  const rows    = opts.allRows ? state.results : filteredResults();
+  if (!rows.length) return;
 
-  const escape   = v => { const s = String(v); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s; };
+  const suffix  = opts.suffix ? `_${opts.suffix}` : '';
+  const ts      = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit',
+    day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date()).replace(/[\s/:,]/g, '-').replace(/-+/g, '-');
 
-  // Build group header row — each group label spans its column count, empty cells for the rest
+  const escape  = v => { const s = String(v); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s; };
+
   const groupRow = EXPORT_GROUPS.flatMap(g => [g.label, ...Array(g.keys.length - 1).fill('')]);
-  const { keys } = flattenResult(filtered[0]);
+  const { keys } = flattenResult(rows[0]);
 
-  const rows = [
+  const csvRows = [
     groupRow.map(escape).join(','),
     keys.map(escape).join(','),
-    ...filtered.map(r => flattenResult(r).values.map(escape).join(',')),
+    ...rows.map(r => flattenResult(r).values.map(escape).join(',')),
   ];
 
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
   const a    = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = `tracking-validator-${Date.now()}.csv`;
+  a.download = `tracking-validator-${ts}${suffix}.csv`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -1488,6 +1509,7 @@ async function startCrawl() {
   state.running = true;
   state.results = [];
   state.detailId = null;
+  document.body.classList.add('is-running');    // suppresses heavy animations during crawl
 
   document.getElementById('run-btn').classList.add('hidden');
   document.getElementById('cancel-btn').classList.remove('hidden');
@@ -1517,6 +1539,7 @@ async function startCrawl() {
 function finishCrawl() {
   state.running         = false;
   state.cancelRequested = false;
+  document.body.classList.remove('is-running');  // re-enable post-crawl animations
   document.getElementById('run-btn').classList.remove('hidden');
   const cancelBtn = document.getElementById('cancel-btn');
   cancelBtn.classList.add('hidden');
@@ -1528,11 +1551,245 @@ function finishCrawl() {
   updateIdentityProgress();   // refresh progress badge
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// INIT
+// Debounced renderTable — batches rapid updates during crawl/identity enrichment.
+// Immediate re-render happens on the first call; further calls within 80ms are
+// coalesced so a burst of identity updates doesn't re-render dozens of times.
+let _renderPending = false;
+let _renderTimer   = null;
+function renderTableDebounced() {
+  if (!_renderPending) {
+    _renderPending = true;
+    renderTable();                       // immediate first paint
+  }
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(() => {
+    _renderPending = false;
+    renderTable();                       // trailing paint after burst settles
+  }, 80);
+}
 // ══════════════════════════════════════════════════════════════════════════════
 
+function setMode(mode) {
+  state.mode = mode;
+  document.body.dataset.mode = mode;
+  localStorage.setItem('tv-mode', mode);
+
+  // Update toggle button visuals
+  document.querySelectorAll('.mode-toggle-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+
+  if (mode === 'walkthrough') {
+    // Switching INTO walkthrough — go to current step (or step 1 if not set)
+    goToStep(state.guidedStep || 1);
+  } else {
+    // Switching INTO workbench — clear step marker so panels show correctly
+    document.body.removeAttribute('data-step');
+  }
+}
+
+function goToStep(n) {
+  state.guidedStep = n;
+  document.body.dataset.step = String(n);
+
+  // Show only the active step
+  document.querySelectorAll('.guided-step').forEach(el => {
+    el.classList.toggle('hidden', el.dataset.step !== String(n));
+  });
+
+  // Step-entry side effects
+  if (n === 2) {
+    // Substitute campaign IDs into SQL
+    const sql = SQL_QUERY.replace('{campaign_id}', state.campaignIds.join(', '));
+    document.getElementById('wt-sql-code').innerHTML = highlightSql(sql);
+  }
+
+  if (n === 4) {
+    // Populate verify preview from state.parsed
+    renderWalkthroughPreview();
+    syncConfigToWalkthrough();
+  }
+
+  // Steps 5 & 6 — terminal + results need to be visible
+  if (n === 5 || n === 6) {
+    document.getElementById('panel-terminal').classList.remove('hidden');
+    document.getElementById('panel-results').classList.remove('hidden');
+  }
+}
+
+// ── Step 1 — Campaign ID validation ─────────────────────────────────────────
+
+function parseCampaignIds(text) {
+  if (!text || !text.trim()) return { ids: [], error: null };
+  // Accept comma or newline separated. Strip whitespace, filter empties.
+  const tokens = text.split(/[,\n]/).map(t => t.trim()).filter(Boolean);
+  const invalid = tokens.filter(t => !/^\d+$/.test(t));
+  if (invalid.length > 0) {
+    return { ids: [], error: `Invalid campaign ID: ${invalid.slice(0, 3).join(', ')}${invalid.length > 3 ? '…' : ''}. IDs must be numeric.` };
+  }
+  // Deduplicate
+  const ids = [...new Set(tokens)];
+  return { ids, error: null };
+}
+
+function updateStep1(text) {
+  const { ids, error } = parseCampaignIds(text);
+  const meta = document.getElementById('wt-step1-meta');
+  const nextBtn = document.getElementById('wt-step1-next');
+
+  if (error) {
+    meta.textContent = error;
+    meta.classList.add('error');
+    nextBtn.disabled = true;
+    state.campaignIds = [];
+    return;
+  }
+
+  meta.classList.remove('error');
+  if (ids.length === 0) {
+    meta.textContent = '';
+    nextBtn.disabled = true;
+    state.campaignIds = [];
+  } else {
+    meta.textContent = `${ids.length} campaign ID${ids.length !== 1 ? 's' : ''} detected`;
+    nextBtn.disabled = false;
+    state.campaignIds = ids;
+  }
+}
+
+// ── Step 3 — walkthrough-specific input handling ────────────────────────────
+
+function updateWalkthroughPreview(text) {
+  const errorEl = document.getElementById('wt-parse-error');
+  const metaEl  = document.getElementById('wt-step3-meta');
+  const nextBtn = document.getElementById('wt-step3-next');
+
+  if (!text || !text.trim()) {
+    errorEl.classList.add('hidden');
+    metaEl.textContent = '';
+    nextBtn.disabled = true;
+    state.parsed = [];
+    return;
+  }
+
+  const { urls, error } = parseInput(text);
+
+  if (error || !urls.length) {
+    errorEl.textContent = error || 'No valid URLs detected.';
+    errorEl.classList.remove('hidden');
+    metaEl.textContent = '';
+    nextBtn.disabled = true;
+    state.parsed = [];
+    return;
+  }
+
+  errorEl.classList.add('hidden');
+  state.parsed = urls;
+  metaEl.textContent = `${urls.length} URL${urls.length !== 1 ? 's' : ''} detected`;
+  nextBtn.disabled = false;
+
+  // Also keep workbench preview in sync so switching modes mid-flow works
+  const workbenchPaste = document.getElementById('paste-input');
+  if (workbenchPaste && workbenchPaste.value !== text) workbenchPaste.value = text;
+  updatePreview(text);
+}
+
+// ── Step 4 — verify preview and config sync ─────────────────────────────────
+
+function renderWalkthroughPreview() {
+  const metaEl  = document.getElementById('wt-parse-meta');
+  const tbodyEl = document.getElementById('wt-parse-table-body');
+  const urls    = state.parsed;
+  if (!urls.length) return;
+
+  // Meta line — count + click ID param summary
+  const params = {};
+  urls.forEach(u => {
+    const k = u.clickIdParam || 'irclickid';
+    params[k] = (params[k] || 0) + 1;
+  });
+  const paramSummary = Object.entries(params).map(([k, v]) => `${v} ${k}`).join(' · ');
+  metaEl.textContent = `${urls.length} URL${urls.length !== 1 ? 's' : ''} ready · ${paramSummary}`;
+
+  tbodyEl.innerHTML = urls.slice(0, 20).map(u =>
+    `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.campaignName || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td></tr>`
+  ).join('') + (urls.length > 20 ? `<tr><td colspan="4" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
+}
+
+function syncConfigToWalkthrough() {
+  // Copy values from workbench config inputs into walkthrough config inputs.
+  // Both sets are wired with bidirectional listeners so they stay in sync.
+  ['concurrency','wait','retries','delay'].forEach(field => {
+    const wb = document.getElementById(`cfg-${field}`);
+    const wt = document.getElementById(`wt-cfg-${field}`);
+    if (wb && wt) wt.value = wb.value;
+  });
+}
+
+function syncConfigFromWalkthrough() {
+  ['concurrency','wait','retries','delay'].forEach(field => {
+    const wb = document.getElementById(`cfg-${field}`);
+    const wt = document.getElementById(`wt-cfg-${field}`);
+    if (wb && wt) wb.value = wt.value;
+  });
+}
+
+// ── Step 5 → 6 transition: check if everything is complete ──────────────────
+
+function maybeAdvanceToStep6() {
+  if (state.mode !== 'walkthrough') return;
+  if (state.guidedStep !== 5) return;
+  if (state.running) return;
+  if (state.results.length === 0) return;
+
+  // All identity lookups resolved? Status is PASS/WARN/FAIL/N/A (not pending/retry)
+  const allDone = state.results.every(r => {
+    const s = r.identity && r.identity.status;
+    return s === 'PASS' || s === 'WARN' || s === 'FAIL' || s === 'N/A';
+  });
+
+  if (allDone) {
+    goToStep(6);
+    if (!state.autoDownloaded) {
+      state.autoDownloaded = true;
+      const suffix = state.identityStopped ? 'partial' : 'complete';
+      setTimeout(() => {
+        exportCsv({ allRows: true, suffix });
+        const msg = document.getElementById('wt-step6-message');
+        if (msg) msg.textContent = state.identityStopped
+          ? 'Identity enrichment was stopped. CSV downloaded with available data.'
+          : 'CSV downloaded.';
+      }, 300);
+    }
+  }
+}
+
+// ── Restart walkthrough (Start Over) ────────────────────────────────────────
+
+function walkthroughRestart() {
+  resetAll();
+  state.campaignIds    = [];
+  state.autoDownloaded = false;
+  state.identityStopped = false;
+  // Clear walkthrough inputs
+  const ci = document.getElementById('wt-campaign-input');
+  if (ci) ci.value = '';
+  const pi = document.getElementById('wt-paste-input');
+  if (pi) pi.value = '';
+  document.getElementById('wt-step1-meta').textContent = '';
+  document.getElementById('wt-step3-meta').textContent = '';
+  document.getElementById('wt-parse-error').classList.add('hidden');
+  document.getElementById('wt-step1-next').disabled = true;
+  document.getElementById('wt-step3-next').disabled = true;
+  goToStep(1);
+}
+
+
+
 document.addEventListener('DOMContentLoaded', async () => {
+  // Signal main process immediately — triggers update check after 1s delay.
+  // Don't hold this until end of init; it's independent of UI setup.
+  window.api.rendererReady();
 
   // ── IPC listeners ──────────────────────────────────────────────────────────
   window.api.onLog(msg => logLine(msg));
@@ -1564,7 +1821,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     updateCounts();
     updateIdentityProgress();
-    renderTable();
+    renderTableDebounced();
   });
 
   window.api.onDone(() => {
@@ -1578,8 +1835,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       Object.assign(r.identity, update);
       r.remediation_note = computeRemediation(r);
       updateIdentityProgress();
-      renderTable();
+      renderTableDebounced();
       if (state.detailId === id) renderDrawer();
+      maybeAdvanceToStep6();
     }
   });
 
@@ -1589,10 +1847,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusEl.textContent = 'Complete';
     delete statusEl.dataset.baseText;
     updateIdentityProgress();
+    maybeAdvanceToStep6();
   });
 
   // ── Config ─────────────────────────────────────────────────────────────────
-  await loadConfig();
+  // Fire without await — config populates via IPC shortly after; HTML defaults cover the gap.
+  loadConfig();
 
   // Save config on blur
   ['cfg-concurrency','cfg-wait','cfg-retries','cfg-delay'].forEach(id => {
@@ -1609,13 +1869,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
-  // ── Input mode toggle ───────────────────────────────────────────────────────
-  document.querySelectorAll('.mode-btn').forEach(btn => {
+  // ── Input mode toggle (workbench panel only) ─────────────────────────────
+  // Scoped to .input-mode-toggle so we don't grab walkthrough buttons,
+  // which share the .mode-btn class but use data-wt-mode and a different DOM tree.
+  document.querySelectorAll('.input-mode-toggle .mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.input-mode-toggle .mode-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       document.querySelectorAll('.input-mode-pane').forEach(p => p.classList.add('hidden'));
-      document.getElementById('mode-' + btn.dataset.mode).classList.remove('hidden');
+      const pane = document.getElementById('mode-' + btn.dataset.mode);
+      if (pane) pane.classList.remove('hidden');
     });
   });
 
@@ -1770,10 +2033,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Terminal expand toggle
   document.getElementById('terminal-expand').addEventListener('click', e => {
     e.stopPropagation();
+    const panel = document.getElementById('panel-terminal');
     state.terminalExpanded = !state.terminalExpanded;
-    document.getElementById('panel-terminal').classList.toggle('expanded', state.terminalExpanded);
+    // Mutually exclusive: expanding clears collapsed, collapsing clears expanded
+    panel.classList.toggle('expanded', state.terminalExpanded);
+    if (state.terminalExpanded) panel.classList.remove('collapsed');
     e.target.textContent = state.terminalExpanded ? '⤡' : '⤢';
-    e.target.title = state.terminalExpanded ? 'Collapse to default size' : 'Expand terminal';
+    e.target.title       = state.terminalExpanded ? 'Collapse to default size' : 'Expand terminal';
   });
 
   // ── Search input ────────────────────────────────────────────────────────────
@@ -1788,7 +2054,137 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Custom tooltip — reliable hover bubble, replaces native title ──────────
   initTooltips();
 
-  // ── Theme toggle — cycles through dark → warm → light ────────────────────
+  // ── Walkthrough mode ────────────────────────────────────────────────────────
+
+  // Mode toggle
+  document.querySelectorAll('.mode-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  });
+
+  // Step 1 — campaign IDs input
+  const wtCampaignInput = document.getElementById('wt-campaign-input');
+  if (wtCampaignInput) {
+    wtCampaignInput.addEventListener('input', () => updateStep1(wtCampaignInput.value));
+  }
+  document.getElementById('wt-step1-next').addEventListener('click', () => goToStep(2));
+
+  // Step 2 — SQL panel
+  document.getElementById('wt-step2-back').addEventListener('click', () => goToStep(1));
+  document.getElementById('wt-step2-next').addEventListener('click', () => goToStep(3));
+  document.getElementById('wt-sql-copy').addEventListener('click', () => {
+    const sql = SQL_QUERY.replace('{campaign_id}', state.campaignIds.join(', '));
+    navigator.clipboard.writeText(sql).then(() => {
+      const btn = document.getElementById('wt-sql-copy');
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  });
+
+  // Step 3 — paste/upload toggle
+  document.querySelectorAll('[data-wt-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-wt-mode]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.wt-input-pane').forEach(p => p.classList.add('hidden'));
+      document.getElementById('wt-mode-' + btn.dataset.wtMode).classList.remove('hidden');
+    });
+  });
+
+  // Step 3 — paste input
+  const wtPasteInput = document.getElementById('wt-paste-input');
+  let wtParseTimer;
+  if (wtPasteInput) {
+    wtPasteInput.addEventListener('input', () => {
+      clearTimeout(wtParseTimer);
+      wtParseTimer = setTimeout(() => updateWalkthroughPreview(wtPasteInput.value), 300);
+    });
+  }
+
+  // Step 3 — file upload
+  document.getElementById('wt-file-browse-btn').addEventListener('click', async () => {
+    const content = await window.api.openCsv();
+    if (content) {
+      wtPasteInput.value = content;
+      updateWalkthroughPreview(content);
+    }
+  });
+
+  const wtDropZone = document.getElementById('wt-file-drop-zone');
+  wtDropZone.addEventListener('dragover',  e => { e.preventDefault(); wtDropZone.classList.add('drag-over'); });
+  wtDropZone.addEventListener('dragleave', () => wtDropZone.classList.remove('drag-over'));
+  wtDropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    wtDropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const r = new FileReader();
+      r.onload = ev => {
+        wtPasteInput.value = ev.target.result;
+        updateWalkthroughPreview(ev.target.result);
+      };
+      r.readAsText(file);
+    }
+  });
+
+  document.getElementById('wt-step3-back').addEventListener('click', () => goToStep(2));
+  document.getElementById('wt-step3-next').addEventListener('click', () => goToStep(4));
+
+  // Step 4 — config inputs sync with workbench
+  ['concurrency','wait','retries','delay'].forEach(field => {
+    const wt = document.getElementById(`wt-cfg-${field}`);
+    const wb = document.getElementById(`cfg-${field}`);
+    if (wt && wb) {
+      wt.addEventListener('input',  () => { wb.value = wt.value; });
+      wt.addEventListener('change', () => { wb.value = wt.value; saveConfigNow(); });
+      wb.addEventListener('input',  () => { wt.value = wb.value; });
+    }
+  });
+
+  document.getElementById('wt-step4-back').addEventListener('click', () => goToStep(3));
+  document.getElementById('wt-step4-run').addEventListener('click', () => {
+    state.autoDownloaded = false;
+    goToStep(5);
+    startCrawl();
+  });
+
+  // Step 5 — cancel crawl
+  document.getElementById('wt-step5-cancel').addEventListener('click', () => {
+    window.api.cancelCrawl();
+    state.cancelRequested = true;
+    logLine('⚠ Cancellation requested.');
+  });
+
+  // Step 5 — stop identity enrichment
+  document.getElementById('wt-step5-stop-identity').addEventListener('click', async () => {
+    state.identityStopped = true;
+    document.getElementById('wt-step5-stop-identity').disabled = true;
+    document.getElementById('wt-step5-stop-identity').textContent = 'Stopping…';
+    logLine('⚠ Stopping identity enrichment — downloading CSV with available data…');
+    await window.api.stopIdentity();
+    // Force advance — identity done IPC may not fire now that queue is drained
+    state.running = false;
+    state.results.forEach(r => {
+      if (!r.identity || (r.identity.status !== 'PASS' && r.identity.status !== 'WARN' && r.identity.status !== 'FAIL')) {
+        if (r.identity) r.identity.status = 'N/A';
+      }
+    });
+    maybeAdvanceToStep6();
+  });
+
+  // Step 6 — re-run / restart
+  document.getElementById('wt-step6-rerun').addEventListener('click', () => {
+    state.autoDownloaded = false;
+    goToStep(5);
+    rerunIssues();
+  });
+  document.getElementById('wt-step6-restart').addEventListener('click', walkthroughRestart);
+
+  // Initial mode from localStorage — default is walkthrough
+  const savedMode = localStorage.getItem('tv-mode') || 'walkthrough';
+  setMode(savedMode);
+
+
   const THEME_CYCLE = ['dark', 'warm', 'light'];
   const THEME_ICON  = { dark: '◐', warm: '◑', light: '☀' };
   const THEME_NEXT_LABEL = { dark: 'warm', warm: 'light', light: 'dark' };
@@ -1852,8 +2248,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.preventDefault();
     window.api.openExternal('https://fastshoes.co.za/scott/tools/tracking_validator/');
   });
-
-  // Signal main process — all IPC listeners are now registered
-  window.api.rendererReady();
 
 });
