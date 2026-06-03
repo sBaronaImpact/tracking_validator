@@ -1,4 +1,43 @@
-/* ── Reset & base ─────────────────────────────────────────────────────────── */
+/* ── Warm theme overrides — for hardcoded dark colors that should warm up ─── */
+[data-theme="warm"] .terminal-output {
+  background: #15120f;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-dim);
+}
+[data-theme="warm"] .code-block {
+  background: #15120f;
+}
+[data-theme="warm"] .btn-primary,
+[data-theme="warm"] .filter-tab.active,
+[data-theme="warm"] .update-pill,
+[data-theme="warm"] .btn-rerun:hover:not(:disabled),
+[data-theme="warm"] .input-undo-btn,
+[data-theme="warm"] .terminal-undo {
+  /* Dark text used against bright accent backgrounds — keep warm-toned for cohesion */
+  color: #1a1612;
+}
+[data-theme="warm"] .events-btn:hover {
+  color: #ffffff;
+}
+[data-theme="warm"] .group-header-row th.grp-identity {
+  color: #1a1612;
+}
+[data-theme="warm"] .dv-section-title.grp-identity {
+  color: #1a1612;
+}
+[data-theme="warm"] .group-header-row th.grp-action,
+[data-theme="warm"] .group-header-row th.grp-link,
+[data-theme="warm"] .group-header-row th.grp-general,
+[data-theme="warm"] .group-header-row th.grp-notes,
+[data-theme="warm"] .dv-section-title.grp-action,
+[data-theme="warm"] .dv-section-title.grp-general,
+[data-theme="warm"] .dv-section-title.grp-notes {
+  color: var(--bg);
+}
+[data-theme="warm"] ::selection {
+  background: #3ecf8e;
+  color: #1a1612;
+}
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 /* ── Design tokens ────────────────────────────────────────────────────────── */
@@ -18,6 +57,8 @@
   --accent-dim:  #1f6e4a;
   --purple:      #7c6af7;
   --blue:        #4a9eff;
+  --cyan:        #22d3ee;
+  --coral:       #f5816b;
   --red:         #f05070;
   --amber:       #f5a623;
   --green:       #3ecf8e;
@@ -38,6 +79,39 @@
   --tabnav-h:    38px;
 }
 
+[data-theme="warm"] {
+  --bg:          #1d1a17;
+  --bg-card:     #25211d;
+  --bg-input:    #2d2823;
+  --bg-hover:    #332d27;
+  --row-bg-fail: #2a1f1f;
+  --row-bg-warn: #2b261d;
+  --border:      #4a3f33;
+  --border-dim:  #322a23;
+  --text:        #f0e6d8;
+  --text-muted:  #b8a896;
+  --text-dim:    #7a6a58;
+  /* Semantic colors stay aligned with dark — same meanings */
+  --accent:      #3ecf8e;
+  --accent-dim:  #1f6e4a;
+  --purple:      #9d8eff;
+  --blue:        #6ab2ff;
+  --cyan:        #4cdaee;
+  --coral:       #f5816b;
+  --red:         #f05070;
+  --amber:       #f5a623;
+  --green:       #3ecf8e;
+
+  --pass-bg:     rgba(62,207,142,0.10);
+  --pass-text:   #5ce5a8;
+  --fail-bg:     rgba(240,80,112,0.10);
+  --fail-text:   #f57892;
+  --warn-bg:     rgba(245,166,35,0.12);
+  --warn-text:   #f7b952;
+  --skip-bg:     rgba(184,168,150,0.10);
+  --skip-text:   #b8a896;
+}
+
 [data-theme="light"] {
   --bg:          #f5f0e8;
   --bg-card:     #ede8de;
@@ -52,6 +126,8 @@
   --text-dim:    #9090a0;
   --accent:      #2A7A5A;
   --blue:        #1a4a6a;
+  --cyan:        #0891b2;
+  --coral:       #c25a3f;
   --pass-bg:     rgba(42,122,90,0.07);
   --pass-text:   #2A7A5A;
   --fail-bg:     rgba(180,40,60,0.08);
@@ -95,6 +171,13 @@ body::before {
     radial-gradient(ellipse 80% 50% at 15% 15%, rgba(42,122,90,0.06) 0%, transparent 60%),
     radial-gradient(ellipse 60% 40% at 85% 85%, rgba(74,158,255,0.04) 0%, transparent 60%),
     url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c8c0b0' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+[data-theme="warm"] body::before {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 15% 15%, rgba(62,207,142,0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 85%, rgba(245,129,107,0.04) 0%, transparent 60%),
+    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%234a3f33' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
 /* ── Topbar ───────────────────────────────────────────────────────────────── */
@@ -593,6 +676,29 @@ body::before {
 }
 [data-theme="light"] .filter-tab.active { color: #ffffff; }
 
+/* Per-filter active colors — apply via data-filter attribute */
+.filter-tab[data-filter="UTT"].active {
+  background: var(--purple); border-color: var(--purple); color: #ffffff;
+}
+.filter-tab[data-filter="SHOPIFY"].active {
+  background: var(--blue); border-color: var(--blue); color: #ffffff;
+}
+.filter-tab[data-filter="HYBRID"].active {
+  background: linear-gradient(90deg, var(--purple), var(--blue));
+  border-color: var(--purple);
+  color: #ffffff;
+}
+.filter-tab[data-filter="CLICKID"].active {
+  background: var(--coral); border-color: var(--coral); color: #ffffff;
+}
+.filter-tab[data-filter="issues"].active {
+  background: var(--red); border-color: var(--red); color: #ffffff;
+}
+.filter-tab[data-filter="unknown"].active {
+  background: var(--text-muted); border-color: var(--text-muted); color: var(--bg);
+}
+[data-theme="light"] .filter-tab[data-filter="unknown"].active { color: #ffffff; }
+
 .tab-count {
   background: rgba(255,255,255,0.15);
   padding: 0 5px;
@@ -620,25 +726,30 @@ body::before {
   min-width: 100%;
 }
 
-/* Frozen header */
+/* Frozen header — generic sticky behavior shared by both rows */
 .results-table thead tr th {
   position: sticky;
-  top: 0;
-  background: var(--bg-input);
   z-index: 20;
+  background: var(--bg-input);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
   user-select: none;
 }
+/* Stack the two header rows so both stay visible while scrolling */
+.results-table thead tr.group-header-row th { top: 0; }
+.results-table thead tr.col-header-row   th { top: 28px; }
 
-/* Frozen first 3 columns — read --rbg from parent <tr> for opaque background */
-.results-table .col-frozen-0 { position: sticky; left: 0;    z-index: 15; background: var(--rbg, var(--bg-card)); }
-.results-table .col-frozen-1 { position: sticky; left: 36px; z-index: 15; background: var(--rbg, var(--bg-card)); }
-.results-table .col-frozen-2 { position: sticky; left: 96px; z-index: 15; background: var(--rbg, var(--bg-card)); }
+/* Frozen first 4 columns — read --rbg from parent <tr> for opaque background
+   Order: # | CampaignId | CampaignName | Status (positions: 0px / 36px / 116px / 256px) */
+.results-table .col-frozen-0 { position: sticky; left: 0;     z-index: 15; background: var(--rbg, var(--bg-card)); }
+.results-table .col-frozen-1 { position: sticky; left: 36px;  z-index: 15; background: var(--rbg, var(--bg-card)); }
+.results-table .col-frozen-2 { position: sticky; left: 116px; z-index: 15; background: var(--rbg, var(--bg-card)); }
+.results-table .col-frozen-3 { position: sticky; left: 256px; z-index: 15; background: var(--rbg, var(--bg-card)); }
 /* Thead frozen cells need explicit solid background */
 .results-table thead .col-frozen-0,
 .results-table thead .col-frozen-1,
-.results-table thead .col-frozen-2 { z-index: 25; background: var(--bg-input); }
+.results-table thead .col-frozen-2,
+.results-table thead .col-frozen-3 { z-index: 25; background: var(--bg-input); }
 
 /* Group header row */
 .group-header-row th {
@@ -656,6 +767,99 @@ body::before {
 .group-header-row th:first-child { text-align: left; color: var(--text-dim); }
 .group-header-row th.group-start {
   border-left: 2px solid var(--accent);
+}
+
+/* Group color variants — colored BACKGROUND BAND on group header row only.
+   Column header row underneath uses neutral text; only the left-divider picks up group color. */
+.group-header-row th.grp-action,
+.group-header-row th.grp-link,
+.group-header-row th.grp-general,
+.group-header-row th.grp-notes     { background: var(--text-muted); color: var(--bg); }
+.group-header-row th.grp-utt       { background: var(--purple); color: #ffffff; }
+.group-header-row th.grp-shopify   { background: var(--blue);   color: #ffffff; }
+.group-header-row th.grp-identity  { background: var(--cyan);   color: #0b1118; }
+
+/* Light mode — text contrast adjusted for lighter background fills */
+[data-theme="light"] .group-header-row th.grp-action,
+[data-theme="light"] .group-header-row th.grp-link,
+[data-theme="light"] .group-header-row th.grp-general,
+[data-theme="light"] .group-header-row th.grp-notes     { background: #6a6a82; color: #ffffff; }
+[data-theme="light"] .group-header-row th.grp-utt       { background: #7c6af7; color: #ffffff; }
+[data-theme="light"] .group-header-row th.grp-shopify   { background: #1a4a6a; color: #ffffff; }
+[data-theme="light"] .group-header-row th.grp-identity  { background: #0891b2; color: #ffffff; }
+
+/* Group-start left divider picks up the group color */
+.group-header-row th.grp-utt.group-start,
+.col-header-row   th.grp-utt.group-start      { border-left: 2px solid var(--purple); }
+.group-header-row th.grp-shopify.group-start,
+.col-header-row   th.grp-shopify.group-start  { border-left: 2px solid var(--blue); }
+.group-header-row th.grp-identity.group-start,
+.col-header-row   th.grp-identity.group-start { border-left: 2px solid var(--cyan); }
+.group-header-row th.grp-action.group-start,
+.col-header-row   th.grp-action.group-start,
+.group-header-row th.grp-link.group-start,
+.col-header-row   th.grp-link.group-start,
+.group-header-row th.grp-general.group-start,
+.col-header-row   th.grp-general.group-start,
+.group-header-row th.grp-notes.group-start,
+.col-header-row   th.grp-notes.group-start    { border-left: 2px solid var(--text-muted); }
+
+/* Data row group-start borders match too */
+.results-table tbody td.grp-utt.group-start      { border-left: 2px solid var(--purple); }
+.results-table tbody td.grp-shopify.group-start  { border-left: 2px solid var(--blue); }
+.results-table tbody td.grp-identity.group-start { border-left: 2px solid var(--cyan); }
+.results-table tbody td.grp-action.group-start,
+.results-table tbody td.grp-link.group-start,
+.results-table tbody td.grp-general.group-start,
+.results-table tbody td.grp-notes.group-start   { border-left: 2px solid var(--text-muted); }
+
+/* Reset + Re-run Issues buttons in results toolbar */
+.btn-reset, .btn-rerun {
+  font-family: var(--font);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  background: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-rerun {
+  border: 1px solid var(--amber);
+  color: var(--amber);
+}
+.btn-rerun:hover:not(:disabled) {
+  background: var(--warn-bg);
+}
+.btn-rerun:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.btn-reset {
+  border: 1px solid var(--text-dim);
+  color: var(--text-muted);
+}
+.btn-reset:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* Identity enrichment progress indicator in terminal status */
+.identity-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--cyan);
+  padding: 2px 8px;
+  border: 1px solid var(--cyan);
+  border-radius: 10px;
+  margin-left: 8px;
+}
+.identity-progress.complete {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Column headers */
@@ -874,6 +1078,32 @@ body::before {
   color: var(--accent);
   margin-bottom: 10px;
 }
+
+/* Drawer section title bands — match table group colors */
+.dv-section-title.grp-utt {
+  background: var(--purple); color: #ffffff;
+  padding: 6px 10px; border-radius: 3px;
+}
+.dv-section-title.grp-shopify {
+  background: var(--blue); color: #ffffff;
+  padding: 6px 10px; border-radius: 3px;
+}
+.dv-section-title.grp-identity {
+  background: var(--cyan); color: #0b1118;
+  padding: 6px 10px; border-radius: 3px;
+}
+.dv-section-title.grp-action,
+.dv-section-title.grp-general,
+.dv-section-title.grp-notes {
+  background: var(--text-muted); color: var(--bg);
+  padding: 6px 10px; border-radius: 3px;
+}
+[data-theme="light"] .dv-section-title.grp-utt      { background: #7c6af7; color: #ffffff; }
+[data-theme="light"] .dv-section-title.grp-shopify  { background: #1a4a6a; color: #ffffff; }
+[data-theme="light"] .dv-section-title.grp-identity { background: #0891b2; color: #ffffff; }
+[data-theme="light"] .dv-section-title.grp-action,
+[data-theme="light"] .dv-section-title.grp-general,
+[data-theme="light"] .dv-section-title.grp-notes    { background: #6a6a82; color: #ffffff; }
 
 .dv-field {
   display: flex;
@@ -1243,9 +1473,6 @@ body::before {
 /* ── Additional features ──────────────────────────────────────────────────── */
 
 /* 4th frozen column — CampaignId, between Status and Tracking Link */
-.results-table .col-frozen-3 { position: sticky; left: 176px; z-index: 15; background: var(--rbg, var(--bg-card)); }
-.results-table thead .col-frozen-3 { z-index: 25; background: var(--bg-input); }
-
 /* Terminal expanded state */
 .panel-collapsible.expanded .terminal-body { max-height: 60vh; }
 .panel-collapsible.expanded .terminal-output { height: calc(60vh - 20px); }
@@ -1435,6 +1662,22 @@ body::before {
   vertical-align: top;
 }
 .results-table tbody td.remediation-cell.is-warn { color: var(--warn-text); }
+
+/* Pulse glow when row has an unresolved issue with a recommendation */
+.results-table tbody td.remediation-cell.is-attention {
+  animation: remediation-pulse 2.4s ease-in-out infinite;
+}
+@keyframes remediation-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(245,166,35,0); }
+  50%      { box-shadow: inset 3px 0 12px -2px rgba(245,166,35,0.45); }
+}
+[data-theme="light"] .results-table tbody td.remediation-cell.is-attention {
+  animation-name: remediation-pulse-light;
+}
+@keyframes remediation-pulse-light {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(138,88,0,0); }
+  50%      { box-shadow: inset 3px 0 12px -2px rgba(138,88,0,0.35); }
+}
 
 /* ── Update notification pill ──────────────────────────────────────────────── */
 .update-pill {

@@ -24,6 +24,20 @@ const state = {
 // ══════════════════════════════════════════════════════════════════════════════
 const COL_GROUPS = [
   {
+    id: 'action', label: 'Recommended Action', always: true,
+    cols: [
+      { key: 'remediation_note', label: 'Remediation', type: 'remediation', w: 360,
+        tip: 'Actionable recommendation based on the check results. What to investigate or fix.' },
+    ]
+  },
+  {
+    id: 'link', label: 'Tracking Link', always: true,
+    cols: [
+      { key: 'input_url', label: 'Tracking Link', type: 'url', w: 220,
+        tip: 'The tracking link as input. Click any row to open the detail panel.' },
+    ]
+  },
+  {
     id: 'general', label: 'General', always: true,
     cols: [
       { key: 'final_url',          label: 'Final URL',                type: 'url',    w: 200,
@@ -35,13 +49,13 @@ const COL_GROUPS = [
       { key: 'click_id_embedded',  label: 'CID Embedded',             type: 'bool',   w: 90,
         tip: 'Whether the click ID appears only embedded within another parameter\'s value (e.g. sourceid=imp_{clickid}) rather than as a standalone parameter (e.g. irclickid={clickid}). When true, the program should be configured with a dedicated {clickid} parameter for reliable attribution.' },
       { key: 'click_id',           label: 'Event Repository',                   type: 'events', w: 48,
-        tip: 'Opens the Event Repository for this click ID — shows clicks, impressions, and conversion events.' },
+        tip: 'Opens the Event Repository for this click ID — shows the click record and its metadata. Test clicks are generated in an isolated incognito session; only the click record itself will be present, not impression or conversion events.' },
       { key: 'detected_tms',       label: 'Global Tag Mgmt Systems',  type: 'array',  w: 150,
         tip: 'Tag management systems detected loaded on the website (GTM, Tealium, Segment, etc). This is what is present on the site — it does not necessarily mean impact.com tracking is deployed through it.' },
       { key: 'brwsr_cookie',       label: 'brwsr',                    type: 'has',    w: 50,
-        tip: 'The impact brwsr cookie. Always absent in this tool — the crawler uses a fresh incognito session each time, and brwsr is a third-party cookie that requires a prior visit to be set. Use Profile Redirect to confirm the lookup was attempted.' },
+        tip: 'The impact brwsr cookie. Always absent in this tool — the crawler runs in a fresh incognito session, so the third-party brwsr cookie cannot be dropped by the tracking domain. Use Profile Redirect to confirm the ojrq.net lookup was attempted.' },
       { key: 'profile_redirect',   label: 'Profile Redirect',         type: 'bool',   w: 110,
-        tip: 'Whether ojrq.net appeared in the redirect chain. This is impact\'s browser recognition server — it handles brwsr ID assignment for cross-session tracking. Note: since the crawler runs in a fresh incognito session, the brwsr cookie is never present (it\'s a third-party cookie). Profile Redirect confirms the lookup was attempted, not that a match was found.' },
+        tip: 'Whether ojrq.net appeared in the redirect chain. When no brwsr cookie is present on a request, impact redirects to ojrq.net to check for an existing one; if none is found, a fresh cookie is generated and set on the tracking domain. In the crawler\'s incognito session the cookie cannot be dropped. Profile Redirect confirms the lookup was attempted, not that a match was found.' },
       { key: 'traffic_guard',      label: 'Traffic Guard',            type: 'bool',   w: 100,
         tip: 'Whether a Traffic Guard redirect (trafficguard.ai) was detected in the chain. Traffic Guard is a third-party click fraud gateway. If the Click ID in URL check failed alongside this, the click ID was likely stripped because the test partner ID (2222) is not a valid live partner for this advertiser.' },
       { key: 'child_parent_redirect', label: 'Child/Parent',          type: 'bool',   w: 90,
@@ -51,7 +65,7 @@ const COL_GROUPS = [
     ]
   },
   {
-    id: 'utt', label: 'UTT',
+    id: 'utt', label: 'Universal Tracking Tag',
     integrations: ['UTT', 'Potential Hybrid Integration'],
     cols: [
       { key: 'utt.tag_detected',           label: 'UTT Library',          type: 'bool',  w: 88,
@@ -106,11 +120,11 @@ const COL_GROUPS = [
       { key: 'identity.status',    label: 'Status',      type: 'id-status', w: 70,
         tip: 'Result of the identity graph enrichment lookup against the impact identity service.' },
       { key: 'identity.pro_node',  label: 'PRO',         type: 'bool',      w: 40,
-        tip: 'Whether a _PRO (profile) node was found in the identity graph.' },
+        tip: 'Whether a _PRO node (the click\'s profile ID) was found in the identity graph.' },
       { key: 'identity.fpc_node',  label: 'FPC',         type: 'bool',      w: 40,
-        tip: 'Whether a _FPC (first-party cookie) node was found in the identity graph.' },
+        tip: 'Whether a _FPC node (first-party cookie) was found in the identity graph.' },
       { key: 'identity.cli_node',  label: 'CLI',         type: 'bool',      w: 40,
-        tip: 'Whether a _CLI (CustomProfileId) node was found in the identity graph.' },
+        tip: 'Whether a _CLI node (CustomProfileId cookie) was found in the identity graph.' },
       { key: 'identity.consumer_id',label:'Consumer ID', type: 'trunc',     w: 100,
         tip: 'The resolved consumer ID from the identity graph.' },
     ]
@@ -120,8 +134,6 @@ const COL_GROUPS = [
     cols: [
       { key: 'crawl_note',       label: 'Crawl Notes',  type: 'note',        w: 260,
         tip: 'Why the URL was skipped or failed (timeout, CAPTCHA, network error, etc). Empty for successful crawls.' },
-      { key: 'remediation_note', label: 'Remediation',  type: 'remediation', w: 360,
-        tip: 'Actionable recommendation based on the check results. What to investigate or fix.' },
     ]
   },
 ];
@@ -304,6 +316,7 @@ const SQL_QUERY = `select
     )
   ) as clickid_param
   ,c.id as campaign_id
+  ,c.name as campaign_name
 from ircm.ircm_technicalintegration ti
 join ircm.ircm_campaign c on c.id = ti.ircm_campaign_id
 join irad.irad_ad ad on ad.ircm_campaign_id = ti.ircm_campaign_id
@@ -335,6 +348,7 @@ function parseMysqlTable(lines) {
   const urlIdx   = headers.findIndex(h => h === 'url');
   const cidIdx   = headers.findIndex(h => h === 'clickid_param');
   const campIdx  = headers.findIndex(h => h === 'campaign_id');
+  const nameIdx  = headers.findIndex(h => h === 'campaign_name');
 
   if (urlIdx < 0) return { urls: [], error: 'Missing URL column in MySQL table' };
 
@@ -344,6 +358,7 @@ function parseMysqlTable(lines) {
       url:          cells[urlIdx]  || '',
       clickIdParam: cidIdx  >= 0 ? cells[cidIdx]  || 'irclickid' : 'irclickid',
       campaignId:   campIdx >= 0 ? cells[campIdx] || '' : '',
+      campaignName: nameIdx >= 0 ? cells[nameIdx] || '' : '',
     };
   }).filter(r => r.url.startsWith('http'));
 
@@ -356,8 +371,9 @@ function parseCsv(lines) {
   const urlIdx  = headers.findIndex(h => h === 'url');
   const cidIdx  = headers.findIndex(h => h === 'clickid_param');
   const campIdx = headers.findIndex(h => h === 'campaign_id');
+  const nameIdx = headers.findIndex(h => h === 'campaign_name');
 
-  if (urlIdx < 0) return { urls: [], error: 'Missing URL column. Expected CSV header: URL,clickid_param,campaign_id' };
+  if (urlIdx < 0) return { urls: [], error: 'Missing URL column. Expected CSV header: URL,clickid_param,campaign_id,campaign_name' };
 
   const urls = lines.slice(1).map(line => {
     const cells = splitCsvLine(line);
@@ -365,6 +381,7 @@ function parseCsv(lines) {
       url:          cells[urlIdx]  || '',
       clickIdParam: cidIdx  >= 0 ? cells[cidIdx]  || 'irclickid' : 'irclickid',
       campaignId:   campIdx >= 0 ? cells[campIdx] || '' : '',
+      campaignName: nameIdx >= 0 ? cells[nameIdx] || '' : '',
     };
   }).filter(r => r.url.startsWith('http'));
 
@@ -654,12 +671,13 @@ function filteredResults() {
   return state.results.filter(r => {
     if (state.filter !== 'all') {
       if (state.filter === 'issues') {
-        // Genuine failures only — FAIL/SKIP/CAPTCHA/nav error
-        // UNKNOWN is NOT an issue — it needs manual verification separately
-        const isIssue = (r.overall_status === 'FAIL' || r.overall_status === 'SKIP' ||
-                         r.captcha_detected || r.navigation_error) &&
-                         r.integration_type !== 'UNKNOWN';
-        if (!isIssue) return false;
+        // Hard issues — always count regardless of integration_type:
+        //   FAIL status, CAPTCHA blocks, navigation errors
+        // Soft SKIP — only count when integration was actually detected
+        //   (UNKNOWN SKIPs go to the Unknown bucket for manual review)
+        const isHardIssue = r.captcha_detected || r.navigation_error || r.overall_status === 'FAIL';
+        const isSkipIssue = r.overall_status === 'SKIP' && r.integration_type !== 'UNKNOWN';
+        if (!isHardIssue && !isSkipIssue) return false;
       } else if (state.filter === 'unknown') {
         if (r.integration_type !== 'UNKNOWN') return false;
       } else {
@@ -702,19 +720,20 @@ function renderTable() {
   let groupHtml = '<tr class="group-header-row">';
   let colHtml   = '<tr class="col-header-row">';
 
-  // Fixed columns: #, Status, CampaignId, Tracking Link
+  // Fixed columns: #, CampaignId, CampaignName, Status (4 frozen)
   groupHtml += '<th colspan="4" style="text-align:left">·</th>';
   colHtml   += '<th class="col-frozen-0" style="min-width:36px">#</th>';
-  colHtml   += '<th class="col-frozen-1" style="min-width:60px">Status</th>';
-  colHtml   += '<th class="col-frozen-2" style="min-width:80px" data-tip="The impact.com campaign (program) ID for this tracking link.">CampaignId</th>';
-  colHtml   += '<th class="col-frozen-3 align-left" style="min-width:200px" data-tip="The tracking link as input. Click any row to open the detail panel.">Tracking Link</th>';
+  colHtml   += '<th class="col-frozen-1" style="min-width:80px" data-tip="The impact.com campaign (program) ID for this tracking link.">CampaignId</th>';
+  colHtml   += '<th class="col-frozen-2" style="min-width:140px" data-tip="The campaign (program) name from impact.com.">CampaignName</th>';
+  colHtml   += '<th class="col-frozen-3" style="min-width:60px">Status</th>';
 
   // Group columns
   groups.forEach((grp, gi) => {
     const startCls = gi === 0 ? '' : 'group-start';
-    groupHtml += `<th colspan="${grp.cols.length}" class="${startCls}">${grp.label}</th>`;
+    const grpCls   = `grp-${grp.id}`;
+    groupHtml += `<th colspan="${grp.cols.length}" class="${startCls} ${grpCls}">${grp.label}</th>`;
     grp.cols.forEach((col, ci) => {
-      const cls = ci === 0 && gi > 0 ? 'group-start' : '';
+      const cls = (ci === 0 && gi > 0 ? 'group-start ' : '') + grpCls;
       const tip = col.tip ? esc(col.tip) : col.key;
       colHtml += `<th class="${cls}" style="min-width:${col.w}px" data-tip="${tip}">${col.label}</th>`;
     });
@@ -731,15 +750,21 @@ function renderTable() {
 
     let row = `<tr class="${statusCls} ${active}" data-id="${r.id}">`;
     row += `<td class="col-frozen-0 row-idx">${i + 1}</td>`;
-    row += `<td class="col-frozen-1">${renderStatusBadge(r.overall_status)}</td>`;
-    row += `<td class="col-frozen-2"><span style="color:var(--text-muted);font-size:11px">${esc(r.campaign_id || '—')}</span></td>`;
-    row += `<td class="col-frozen-3 align-left"><span class="url-cell" data-tip="${esc(r.input_url)}">${esc(trunc(r.input_url, 50))}</span></td>`;
+    row += `<td class="col-frozen-1"><span style="color:var(--text-muted);font-size:11px">${esc(r.campaign_id || '—')}</span></td>`;
+    row += `<td class="col-frozen-2 align-left"><span style="color:var(--text);font-size:11px" data-tip="${esc(r.campaign_name || '')}">${esc(trunc(r.campaign_name || '—', 18))}</span></td>`;
+    row += `<td class="col-frozen-3">${renderStatusBadge(r.overall_status)}</td>`;
 
     groups.forEach((grp, gi) => {
       grp.cols.forEach((col, ci) => {
-        let cls = ci === 0 && gi > 0 ? 'group-start' : '';
+        let cls = (ci === 0 && gi > 0 ? 'group-start ' : '') + `grp-${grp.id}`;
         if (col.type === 'note')        cls += ' crawl-note-cell' + (r.crawl_note ? ' has-note' : '');
-        if (col.type === 'remediation') cls += ' remediation-cell' + (r.remediation_note ? (r.overall_status === 'FAIL' || r.overall_status === 'SKIP' ? ' is-warn' : '') : '');
+        if (col.type === 'remediation') {
+          cls += ' remediation-cell';
+          if (r.remediation_note) {
+            const isAttention = r.overall_status === 'FAIL' || r.overall_status === 'SKIP' || r.overall_status === 'WARN';
+            if (isAttention) cls += ' is-warn is-attention';
+          }
+        }
         row += `<td class="${cls}">${renderCell(r, col)}</td>`;
       });
     });
@@ -769,6 +794,8 @@ function renderTable() {
     if (tabPane) tabPane.scrollTop = paneTop;
   });
 }
+
+// Helper used by updateIdentityProgress — kept here so it works alongside esc()
 
 // ══════════════════════════════════════════════════════════════════════════════
 // DETAIL DRAWER — vertical cheat-sheet, scrollable, copyable
@@ -850,13 +877,27 @@ function renderDrawer() {
            '</div><div class="dv-redirect-chain">' + hops + '</div></div>';
   };
 
-  const section = (title, inner) =>
-    '<div class="dv-section"><div class="dv-section-title">' + title + '</div>' + inner + '</div>';
+  const section = (title, inner, grpId) => {
+    const titleCls = grpId ? `dv-section-title grp-${grpId}` : 'dv-section-title';
+    return '<div class="dv-section"><div class="' + titleCls + '">' + title + '</div>' + inner + '</div>';
+  };
 
   let html = '';
 
+  // 1. Recommended Action — first, prominent
+  if (r.remediation_note) {
+    copyValues['remediation'] = r.remediation_note;
+    html += '<div class="dv-section dv-section-remediation">' +
+            '<div class="dv-block-head"><span class="dv-section-title grp-action">Recommended Action</span>' +
+            '<button class="dv-copy" data-copy="remediation">Copy</button></div>' +
+            '<pre class="dv-block" style="color:var(--blue);border-color:rgba(74,158,255,0.3);background:rgba(74,158,255,0.05);word-break:normal;overflow-wrap:break-word">' +
+            esc(r.remediation_note) + '</pre></div>';
+  }
+
+  // 2. General
   html += section('General',
     field('campaign_id',      r.campaign_id) +
+    (r.campaign_name ? field('campaign_name', r.campaign_name) : '') +
     field('tracking_link',    r.input_url) +
     field('final_url',        r.final_url) +
     field('HTTP status',      r.final_status_code) +
@@ -876,15 +917,16 @@ function renderDrawer() {
     (r.parent_campaign_id ? field('parent_campaign_id', r.parent_campaign_id) : '') +
     bool ('consent_detected', r.consent_detected) +
     field('integration_type', r.integration_type) +
-    (r.crawl_note ? field('crawl_note', r.crawl_note) : '') +
     (r.integration_type === 'ClickId Integration'
       ? field('note', 'Click ID stored as cookie — verify conversion submission method (CAPI or trackConversion) manually')
       : '') +
-    (r.click_id_cookie_names ? field('click_id_cookie_names', r.click_id_cookie_names) : '')
+    (r.click_id_cookie_names ? field('click_id_cookie_names', r.click_id_cookie_names) : ''),
+    'general'
   );
 
+  // 3. Universal Tracking Tag
   if (r.utt && r.utt.tag_detected !== 'N/A') {
-    html += section('UTT',
+    html += section('Universal Tracking Tag',
       bool ('UTT Library',            r.utt.tag_detected) +
       bool ('Identify Call',          r.utt.identify_call) +
       field('identify_path',          r.utt.identify_path) +
@@ -900,10 +942,12 @@ function renderDrawer() {
       field('ir_field',               r.utt.ir_field) +
       field('Method',                 r.utt.implementation_method) +
       field('UTT Library ms',         r.utt.time_to_tag_ms) +
-      field('Identify ms',            r.utt.time_to_identify_ms)
+      field('Identify ms',            r.utt.time_to_identify_ms),
+      'utt'
     );
   }
 
+  // 4. Shopify
   if (r.shopify && r.shopify.pageload_found !== 'N/A') {
     html += section('Shopify',
       bool ('Pageload Call',          r.shopify.pageload_found) +
@@ -918,23 +962,12 @@ function renderDrawer() {
       custId('CustomerId',            r.shopify.cus_id_present) +
       field('first_party_cookie',     r.shopify.first_party_cookie_field) +
       bool ('Web Pixel',              r.shopify.web_pixel_console) +
-      field('Consent API',            r.shopify.shopify_consent)
+      field('Consent API',            r.shopify.shopify_consent),
+      'shopify'
     );
   }
 
-  html += section('Cookies', block('cookies', r.cookies, 'cookies'));
-  html += section('Redirect Chain', redirectBlock(r.redirect_chain, 'redirect'));
-
-  // Remediation — shown prominently when there's something actionable
-  if (r.remediation_note) {
-    copyValues['remediation'] = r.remediation_note;
-    html += '<div class="dv-section dv-section-remediation">' +
-            '<div class="dv-block-head"><span class="dv-section-title" style="color:var(--blue)">Recommended Action</span>' +
-            '<button class="dv-copy" data-copy="remediation">Copy</button></div>' +
-            '<pre class="dv-block" style="color:var(--blue);border-color:rgba(74,158,255,0.3);background:rgba(74,158,255,0.05);word-break:normal;overflow-wrap:break-word">' +
-            esc(r.remediation_note) + '</pre></div>';
-  }
-
+  // 5. Identity
   html += section('Identity',
     field('status',      r.identity && r.identity.status) +
     field('lookup_type', r.identity && r.identity.lookup_type) +
@@ -945,8 +978,18 @@ function renderDrawer() {
     bool ('fpc_node',    r.identity && r.identity.fpc_node) +
     bool ('cli_node',    r.identity && r.identity.cli_node) +
     ((r.identity && r.identity.ids)  ? block('ids', r.identity.ids, 'ids') : '') +
-    ((r.identity && r.identity.note) ? field('note', r.identity.note) : '')
+    ((r.identity && r.identity.note) ? field('note', r.identity.note) : ''),
+    'identity'
   );
+
+  // 6. Cookies + Redirect Chain — reference dumps at the bottom
+  html += section('Cookies', block('cookies', r.cookies, 'cookies'), 'notes');
+  html += section('Redirect Chain', redirectBlock(r.redirect_chain, 'redirect'), 'notes');
+
+  // 7. Crawl Notes — last
+  if (r.crawl_note) {
+    html += section('Crawl Notes', field('crawl_note', r.crawl_note), 'notes');
+  }
 
   drawer.querySelector('.drawer-body').innerHTML = html;
   drawer.querySelector('.drawer-link').textContent = r.input_url;
@@ -975,9 +1018,20 @@ function buildPlainText(r) {
   const lines = [];
   const add = (k, v) => lines.push(k + ': ' + (v == null || v === '' ? 'N/A' : v));
 
+  // 1. Recommended Action (if any) — first
+  if (r.remediation_note) {
+    lines.push('=== RECOMMENDED ACTION ===');
+    lines.push(r.remediation_note);
+    lines.push('');
+  }
+
+  // 2. General
   lines.push('=== GENERAL ===');
   add('campaign_id',      r.campaign_id);
+  if (r.campaign_name) add('campaign_name', r.campaign_name);
   add('tracking_link',    r.input_url);
+  add('overall_status',   r.overall_status);
+  add('integration_type', r.integration_type);
   add('final_url',        r.final_url);
   add('HTTP status',      r.final_status_code);
   add('click_id_in_url',  r.click_id_in_url);
@@ -991,13 +1045,11 @@ function buildPlainText(r) {
   add('child_parent_redirect',  r.child_parent_redirect);
   if (r.parent_campaign_id) add('parent_campaign_id', r.parent_campaign_id);
   add('consent_detected', r.consent_detected);
-  add('integration_type', r.integration_type);
-  if (r.crawl_note)        add('crawl_note',       r.crawl_note);
-  if (r.remediation_note)  add('remediation_note', r.remediation_note);
   if (r.click_id_cookie_names) add('click_id_cookie_names', r.click_id_cookie_names);
 
+  // 3. Universal Tracking Tag
   if (r.utt && r.utt.tag_detected !== 'N/A') {
-    lines.push('', '=== UTT ===');
+    lines.push('', '=== UNIVERSAL TRACKING TAG ===');
     add('UTT Library',            r.utt.tag_detected);
     add('Identify Call',          r.utt.identify_call);
     add('identify_path',          r.utt.identify_path);
@@ -1013,6 +1065,7 @@ function buildPlainText(r) {
     add('Identify ms',            r.utt.time_to_identify_ms);
   }
 
+  // 4. Shopify
   if (r.shopify && r.shopify.pageload_found !== 'N/A') {
     lines.push('', '=== SHOPIFY ===');
     add('Pageload Call',          r.shopify.pageload_found);
@@ -1028,9 +1081,7 @@ function buildPlainText(r) {
     add('Consent API',            r.shopify.shopify_consent);
   }
 
-  lines.push('', '=== COOKIES ===', r.cookies || 'N/A');
-  lines.push('', '=== REDIRECT CHAIN ===', r.redirect_chain || 'N/A');
-
+  // 5. Identity
   lines.push('', '=== IDENTITY ===');
   if (r.identity) {
     add('status',      r.identity.status);
@@ -1042,6 +1093,15 @@ function buildPlainText(r) {
     add('cli_node',    r.identity.cli_node);
     if (r.identity.ids)  lines.push('ids:', r.identity.ids);
     if (r.identity.note) add('note', r.identity.note);
+  }
+
+  // 6. Cookies + Redirect Chain — reference dumps
+  lines.push('', '=== COOKIES ===', r.cookies || 'N/A');
+  lines.push('', '=== REDIRECT CHAIN ===', r.redirect_chain || 'N/A');
+
+  // 7. Crawl Notes — last
+  if (r.crawl_note) {
+    lines.push('', '=== CRAWL NOTES ===', r.crawl_note);
   }
 
   return lines.join('\n');
@@ -1059,10 +1119,147 @@ function updateCounts() {
   document.getElementById('count-hybrid').textContent  = rs.filter(r => r.integration_type === 'Potential Hybrid Integration').length;
   document.getElementById('count-clickid').textContent = rs.filter(r => r.integration_type === 'ClickId Integration').length;
   document.getElementById('count-unknown').textContent = rs.filter(r => r.integration_type === 'UNKNOWN').length;
-  document.getElementById('count-issues').textContent  = rs.filter(r =>
-    (r.overall_status === 'FAIL' || r.overall_status === 'SKIP' || r.captcha_detected || r.navigation_error) &&
-    r.integration_type !== 'UNKNOWN'
-  ).length;
+  document.getElementById('count-issues').textContent  = rs.filter(r => {
+    const isHardIssue = r.captcha_detected || r.navigation_error || r.overall_status === 'FAIL';
+    const isSkipIssue = r.overall_status === 'SKIP' && r.integration_type !== 'UNKNOWN';
+    return isHardIssue || isSkipIssue;
+  }).length;
+
+  // Enable Re-run Issues only when there are issues AND a crawl isn't running
+  const rerunBtn = document.getElementById('rerun-issues-btn');
+  if (rerunBtn) {
+    const issueCount = getRerunCandidates().length;
+    rerunBtn.disabled = state.running || issueCount === 0;
+    rerunBtn.textContent = issueCount > 0 ? `↻ Re-run Issues (${issueCount})` : '↻ Re-run Issues';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// IDENTITY PROGRESS INDICATOR — pending count in terminal status bar
+// ══════════════════════════════════════════════════════════════════════════════
+
+function updateIdentityProgress() {
+  const statusEl = document.getElementById('terminal-status');
+  if (!statusEl) return;
+
+  // Strip any previous progress badge — keep only the base status text
+  const baseText = statusEl.dataset.baseText || statusEl.textContent;
+  statusEl.dataset.baseText = baseText;
+
+  const rs = state.results;
+  if (!rs.length) {
+    statusEl.innerHTML = esc(baseText);
+    return;
+  }
+
+  // Pending = identity lookup is in flight (status pending/retry) OR has no status yet but should
+  const pending = rs.filter(r => {
+    const s = r.identity && r.identity.status;
+    return s === 'pending' || (typeof s === 'string' && s.startsWith('retry'));
+  }).length;
+
+  const resolved = rs.filter(r => {
+    const s = r.identity && r.identity.status;
+    return s === 'PASS' || s === 'WARN' || s === 'FAIL' || s === 'N/A';
+  }).length;
+
+  if (state.running || pending > 0) {
+    statusEl.innerHTML = `${esc(baseText)} <span class="identity-progress">Identity: ${resolved}/${rs.length}</span>`;
+  } else if (resolved === rs.length && rs.length > 0) {
+    statusEl.innerHTML = `${esc(baseText)} <span class="identity-progress complete">Identity: ${resolved}/${rs.length} ✓</span>`;
+  } else {
+    statusEl.innerHTML = esc(baseText);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RESET — wipe everything in Quick mode
+// ══════════════════════════════════════════════════════════════════════════════
+
+function resetAll() {
+  if (state.running) {
+    if (!confirm('A crawl is running. Cancel it and reset?')) return;
+    try { window.api.cancelCrawl(); } catch {}
+  }
+  state.results       = [];
+  state.parsed        = [];
+  state.detailId      = null;
+  state.searchQuery   = '';
+  state.filter        = 'all';
+
+  // Clear input
+  const pasteInput = document.getElementById('paste-input');
+  if (pasteInput) pasteInput.value = '';
+
+  // Clear terminal
+  const out = document.getElementById('terminal-output');
+  if (out) out.innerHTML = '';
+  const statusEl = document.getElementById('terminal-status');
+  if (statusEl) { statusEl.textContent = ''; delete statusEl.dataset.baseText; }
+
+  // Reset search input
+  const searchInput = document.getElementById('results-search');
+  if (searchInput) searchInput.value = '';
+
+  // Reset filter tabs to All
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  const allTab = document.querySelector('.filter-tab[data-filter="all"]');
+  if (allTab) allTab.classList.add('active');
+
+  // Hide results panel, hide drawer
+  document.getElementById('panel-results').classList.add('hidden');
+  closeDetail();
+
+  updatePreview('');
+  updateCounts();
+  renderTable();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RE-RUN ISSUES — re-crawl FAIL/SKIP rows, replace in-place
+// ══════════════════════════════════════════════════════════════════════════════
+
+function getRerunCandidates() {
+  // Hard issues — always re-runnable: FAIL, captcha, navigation error
+  // Soft SKIPs — re-run only when integration was detected (UNKNOWN excluded — those need manual review)
+  return state.results.filter(r => {
+    const isHardIssue = r.captcha_detected || r.navigation_error || r.overall_status === 'FAIL';
+    const isSkipIssue = r.overall_status === 'SKIP' && r.integration_type !== 'UNKNOWN';
+    return isHardIssue || isSkipIssue;
+  });
+}
+
+async function rerunIssues() {
+  if (state.running) return;
+  const candidates = getRerunCandidates();
+  if (!candidates.length) return;
+
+  state.running = true;
+  document.getElementById('run-btn').classList.add('hidden');
+  document.getElementById('cancel-btn').classList.remove('hidden');
+  document.getElementById('terminal-status').textContent = `Re-running ${candidates.length} URL${candidates.length !== 1 ? 's' : ''}…`;
+  delete document.getElementById('terminal-status').dataset.baseText;
+  logLine(`↻ Re-running ${candidates.length} failed/skipped URL${candidates.length !== 1 ? 's' : ''} with current config…`);
+  updateCounts();
+  saveConfigNow();
+
+  // Build URL list from existing result records — preserve `id` so onResult
+  // can find and replace the original row.
+  const urls = candidates.map(r => ({
+    id:           r.id,
+    url:          r.input_url,
+    campaignId:   r.campaign_id,
+    campaignName: r.campaign_name,
+    clickIdParam: r.click_id_param,
+  }));
+
+  try {
+    const res = await window.api.startCrawl(urls, readConfig());
+    if (res && res.error) { logLine('✖ Error: ' + res.error); finishCrawl(); }
+  } catch (e) {
+    logLine('✖ Fatal: ' + e.message);
+    finishCrawl();
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1107,8 +1304,8 @@ function updatePreview(text) {
 
   // Table rows
   tbodyEl.innerHTML = urls.slice(0, 20).map(u =>
-    `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td></tr>`
-  ).join('') + (urls.length > 20 ? `<tr><td colspan="3" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
+    `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.campaignName || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td></tr>`
+  ).join('') + (urls.length > 20 ? `<tr><td colspan="4" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
 
   preview.classList.remove('hidden');
 }
@@ -1139,11 +1336,14 @@ function logLine(msg) {
 // Grouped keys for section headers in CSV/Sheets exports.
 // Each group renders a header row, then its columns.
 const EXPORT_GROUPS = [
+  // Summary — first columns of the table at the front of the export
+  {
+    label: 'Summary',
+    keys: ['campaign_id', 'campaign_name', 'overall_status', 'remediation_note', 'tracking_link', 'integration_type', 'attempts'],
+  },
   {
     label: 'General',
     keys: [
-      'campaign_id', 'tracking_link', 'overall_status', 'integration_type',
-      'attempts', 'crawl_note', 'remediation_note',
       'final_url', 'final_status_code',
       'click_id_in_url', 'click_id', 'click_id_embedded', 'click_id_cookie_names',
       'consent_detected', 'captcha_detected', 'navigation_error',
@@ -1151,7 +1351,7 @@ const EXPORT_GROUPS = [
     ]
   },
   {
-    label: 'UTT',
+    label: 'Universal Tracking Tag',
     keys: [
       'utt.tag_detected', 'utt.identify_call', 'utt.identify_path', 'utt.identify_status',
       'utt.cli_present', 'utt.cli_value', 'utt.cli_cookie_name',
@@ -1172,16 +1372,20 @@ const EXPORT_GROUPS = [
     ]
   },
   {
-    label: 'Cookies',
-    keys: ['cookies'],
-  },
-  {
     label: 'Identity',
     keys: [
       'identity.status', 'identity.lookup_type', 'identity.attempts',
       'identity.consumer_id', 'identity.ids',
       'identity.pro_node', 'identity.fpc_node', 'identity.cli_node', 'identity.note',
     ]
+  },
+  {
+    label: 'Cookies',
+    keys: ['cookies'],
+  },
+  {
+    label: 'Crawl Notes',
+    keys: ['crawl_note'],
   },
 ];
 
@@ -1297,6 +1501,7 @@ async function startCrawl() {
   const urls = state.parsed.map(p => ({
     url:          p.url,
     campaignId:   p.campaignId,
+    campaignName: p.campaignName,
     clickIdParam: p.clickIdParam,
   }));
 
@@ -1316,7 +1521,11 @@ function finishCrawl() {
   const cancelBtn = document.getElementById('cancel-btn');
   cancelBtn.classList.add('hidden');
   cancelBtn.textContent = 'Cancel';
-  document.getElementById('terminal-status').textContent = `Done — ${state.results.length} URL${state.results.length !== 1 ? 's' : ''}`;
+  const statusEl = document.getElementById('terminal-status');
+  statusEl.textContent = `Done — ${state.results.length} URL${state.results.length !== 1 ? 's' : ''}`;
+  delete statusEl.dataset.baseText;
+  updateCounts();             // re-evaluate rerun button enabled state
+  updateIdentityProgress();   // refresh progress badge
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1329,9 +1538,32 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.api.onLog(msg => logLine(msg));
 
   window.api.onResult(result => {
+    // Engine doesn't propagate campaign_name onto the result — patch it back
+    // in from the parsed input by matching on input URL.
+    if (!result.campaign_name) {
+      const parsed = state.parsed.find(p => p.url === result.input_url);
+      if (parsed && parsed.campaignName) result.campaign_name = parsed.campaignName;
+    }
     result.remediation_note = computeRemediation(result);
-    state.results.push(result);
+    // Replace-in-place if this id already exists (re-run case), else push.
+    // Re-runs always replace the full record. A single [re-run] marker is
+    // added to crawl_note so the user can tell, but no chain accumulation
+    // across multiple re-runs of the same row.
+    const existing = state.results.findIndex(r => r.id === result.id);
+    if (existing >= 0) {
+      // Preserve campaign_name across re-runs if the new result lacks it
+      if (!result.campaign_name && state.results[existing].campaign_name) {
+        result.campaign_name = state.results[existing].campaign_name;
+      }
+      const newNote = result.crawl_note || '';
+      result.crawl_note = newNote ? `[re-run] ${newNote}` : '[re-run]';
+      result.remediation_note = computeRemediation(result);
+      state.results[existing] = result;
+    } else {
+      state.results.push(result);
+    }
     updateCounts();
+    updateIdentityProgress();
     renderTable();
   });
 
@@ -1345,6 +1577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (r) {
       Object.assign(r.identity, update);
       r.remediation_note = computeRemediation(r);
+      updateIdentityProgress();
       renderTable();
       if (state.detailId === id) renderDrawer();
     }
@@ -1352,7 +1585,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   window.api.onIdentityDone(() => {
     logLine('✔ All identity lookups resolved.');
-    document.getElementById('terminal-status').textContent = 'Complete';
+    const statusEl = document.getElementById('terminal-status');
+    statusEl.textContent = 'Complete';
+    delete statusEl.dataset.baseText;
+    updateIdentityProgress();
   });
 
   // ── Config ─────────────────────────────────────────────────────────────────
@@ -1440,6 +1676,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Export ──────────────────────────────────────────────────────────────────
   document.getElementById('export-csv-btn').addEventListener('click', exportCsv);
   document.getElementById('export-sheets-btn').addEventListener('click', exportSheets);
+
+  // ── Reset / Re-run Issues ───────────────────────────────────────────────────
+  document.getElementById('rerun-issues-btn').addEventListener('click', rerunIssues);
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    if (state.results.length === 0 && !state.running) {
+      // Nothing to reset — still confirm if input has content
+      const pasteInput = document.getElementById('paste-input');
+      if (pasteInput && !pasteInput.value.trim()) return;
+    }
+    resetAll();
+  });
 
   // ── SQL Modal ────────────────────────────────────────────────────────────────
   document.getElementById('sql-code').innerHTML = highlightSql(SQL_QUERY);
@@ -1541,16 +1788,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ── Custom tooltip — reliable hover bubble, replaces native title ──────────
   initTooltips();
 
-  // ── Theme toggle ─────────────────────────────────────────────────────────────
+  // ── Theme toggle — cycles through dark → warm → light ────────────────────
+  const THEME_CYCLE = ['dark', 'warm', 'light'];
+  const THEME_ICON  = { dark: '◐', warm: '◑', light: '☀' };
+  const THEME_NEXT_LABEL = { dark: 'warm', warm: 'light', light: 'dark' };
+
   const savedTheme = localStorage.getItem('tv-theme') || 'dark';
   document.documentElement.dataset.theme = savedTheme;
   state.theme = savedTheme;
 
-  document.getElementById('theme-toggle').addEventListener('click', () => {
-    const next = state.theme === 'dark' ? 'light' : 'dark';
+  const themeBtn = document.getElementById('theme-toggle');
+  function refreshThemeButton() {
+    themeBtn.textContent = THEME_ICON[state.theme] || '◐';
+    themeBtn.title = `Theme: ${state.theme} — click for ${THEME_NEXT_LABEL[state.theme]}`;
+  }
+  refreshThemeButton();
+
+  themeBtn.addEventListener('click', () => {
+    const idx  = THEME_CYCLE.indexOf(state.theme);
+    const next = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length];
     state.theme = next;
     document.documentElement.dataset.theme = next;
     localStorage.setItem('tv-theme', next);
+    refreshThemeButton();
   });
 
   // ── Update notification ──────────────────────────────────────────────────────

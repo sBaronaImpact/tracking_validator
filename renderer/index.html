@@ -100,6 +100,7 @@ MySQL table format:
           <thead>
             <tr>
               <th>campaign_id</th>
+              <th>campaign_name</th>
               <th>tracking_link</th>
               <th>click_id_param</th>
             </tr>
@@ -115,19 +116,19 @@ MySQL table format:
     <!-- Config + actions row -->
     <div class="input-footer">
       <div class="config-row">
-        <label class="config-field" data-tooltip="Number of URLs processed simultaneously. Higher = faster but may trigger rate limiting.">
+        <label class="config-field" data-tip="Number of URLs processed simultaneously. Higher = faster but may trigger rate limiting.">
           <span class="config-label">Concurrency</span>
           <input class="config-input" id="cfg-concurrency" type="number" min="1" max="10" value="2">
         </label>
-        <label class="config-field" data-tooltip="Milliseconds to wait after page load before capturing results. Increase for slow sites.">
+        <label class="config-field" data-tip="Milliseconds to wait after page load before capturing results. Increase for slow sites.">
           <span class="config-label">Wait (ms)</span>
           <input class="config-input" id="cfg-wait" type="number" min="5000" max="60000" step="1000" value="20000">
         </label>
-        <label class="config-field" data-tooltip="How many times to retry a URL if it fails.">
+        <label class="config-field" data-tip="How many times to retry a URL if it fails.">
           <span class="config-label">Retries</span>
           <input class="config-input" id="cfg-retries" type="number" min="0" max="5" value="1">
         </label>
-        <label class="config-field" data-tooltip="Milliseconds between URL batches (plus up to 1s random jitter) to avoid bot detection.">
+        <label class="config-field" data-tip="Milliseconds between URL batches (plus up to 1s random jitter) to avoid bot detection.">
           <span class="config-label">Delay (ms)</span>
           <input class="config-input" id="cfg-delay" type="number" min="0" max="10000" step="500" value="2000">
         </label>
@@ -184,13 +185,28 @@ MySQL table format:
           <button
             class="btn btn-outline btn-sm"
             id="export-csv-btn"
-            title="Download results as CSV. Exports rows matching the current filter. Select 'All' to export everything."
+            data-tip="Download results as CSV. Exports rows matching the current filter. Select 'All' to export everything."
           >↓ CSV</button>
           <button
             class="btn btn-outline btn-sm"
             id="export-sheets-btn"
-            title="Copy as tab-separated values for Google Sheets. Exports rows matching the current filter. Select 'All' to export everything."
+            data-tip="Copy as tab-separated values for Google Sheets. Exports rows matching the current filter. Select 'All' to export everything."
           >⧉ Sheets</button>
+        </div>
+
+        <!-- Re-run + Reset -->
+        <div class="export-group">
+          <button
+            class="btn-rerun"
+            id="rerun-issues-btn"
+            disabled
+            data-tip="Re-run only the URLs that failed or were skipped. Uses the current config settings. Results replace the original failed rows in place."
+          >↻ Re-run Issues</button>
+          <button
+            class="btn-reset"
+            id="reset-btn"
+            data-tip="Clear all results, terminal output, and input. Start fresh."
+          >✕ Reset</button>
         </div>
       </div>
     </div>
