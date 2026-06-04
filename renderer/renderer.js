@@ -43,6 +43,8 @@ const COL_GROUPS = [
   {
     id: 'general', label: 'General', always: true,
     cols: [
+      { key: 'integration_type',   label: 'Integration Type',          type: 'text',   w: 140,
+        tip: 'The integration method detected on the landing page: UTT, SHOPIFY, Potential Hybrid Integration, ClickId Integration, or UNKNOWN.' },
       { key: 'input_url', label: 'Tracking Link', type: 'url', w: 220,
         tip: 'The tracking link as input. Click any row to open the detail panel.' },
       { key: 'final_url',          label: 'Final URL',                type: 'url',    w: 200,
@@ -911,6 +913,7 @@ function renderDrawer() {
   html += section('General',
     field('campaign_id',      r.campaign_id) +
     (r.campaign_name ? field('campaign_name', r.campaign_name) : '') +
+    field('integration_type', r.integration_type) +
     field('tracking_link',    r.input_url) +
     field('final_url',        r.final_url) +
     field('HTTP status',      r.final_status_code) +
@@ -929,7 +932,6 @@ function renderDrawer() {
     bool ('child_parent_redirect', r.child_parent_redirect) +
     (r.parent_campaign_id ? field('parent_campaign_id', r.parent_campaign_id) : '') +
     bool ('consent_detected', r.consent_detected) +
-    field('integration_type', r.integration_type) +
     (r.integration_type === 'ClickId Integration'
       ? field('note', 'Click ID stored as cookie — verify conversion submission method (CAPI or trackConversion) manually')
       : '') +
@@ -1359,7 +1361,7 @@ const EXPORT_GROUPS = [
   // Summary — first columns of the table at the front of the export
   {
     label: 'Summary',
-    keys: ['campaign_id', 'campaign_name', 'overall_status', 'remediation_note', 'tracking_link', 'integration_type', 'attempts'],
+    keys: ['campaign_id', 'campaign_name', 'overall_status', 'remediation_note', 'integration_type', 'tracking_link', 'attempts'],
   },
   {
     label: 'General',
