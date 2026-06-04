@@ -89,7 +89,12 @@ class Crawler {
         if (settled) return;       // already emitted — drop this one
         settled = true;
         try { this.onResult(result); }              catch { /* ignore */ }
-        try { this.identityQueue.enqueue(result); } catch { /* ignore */ }
+        // Skip identity enrichment for CAPTCHA blocks and navigation errors —
+        // no IR_PI cookie was captured so the lookup would always fail and waste time.
+        const shouldEnrich = !result.captcha_detected && !result.navigation_error;
+        if (shouldEnrich) {
+          try { this.identityQueue.enqueue(result); } catch { /* ignore */ }
+        }
         resolve();
       };
 
@@ -97,6 +102,7 @@ class Crawler {
         if (settled) return;
         this.log(`⏱ Hard timeout (${HARD_TIMEOUT / 1000}s): ${urlObj.url}`);
         const result = createResult(urlObj.url, urlObj.campaignId, urlObj.clickIdParam);
+        if (urlObj.id) result.id = urlObj.id; // preserve ID for re-run replace-in-place
         result.navigation_error         = true;
         result.navigation_error_message = `Hard timeout after ${HARD_TIMEOUT / 1000}s — URL abandoned`;
         result.crawl_note               = `Hard timeout after ${HARD_TIMEOUT / 1000}s — URL abandoned. The page or one of its requests never resolved. Manual verification recommended.`;
@@ -139,6 +145,7 @@ class Crawler {
     // All attempts failed — emit a single final failure result
     const msg     = lastError ? lastError.message : 'unknown error';
     const result  = createResult(urlObj.url, urlObj.campaignId, urlObj.clickIdParam);
+    if (urlObj.id) result.id = urlObj.id; // preserve ID for re-run replace-in-place
     result.navigation_error         = true;
     result.navigation_error_message = msg;
     result.crawl_note               = buildCrawlNote(msg, maxAttempts);
@@ -200,6 +207,7 @@ class Crawler {
   async _processUrl(urlObj) {
     const { url, campaignId, clickIdParam } = urlObj;
     const result = createResult(url, campaignId, clickIdParam);
+    if (urlObj.id) result.id = urlObj.id; // preserve ID for re-run replace-in-place
 
     this.log(`→ ${url}`);
 
@@ -339,7 +347,11 @@ class Crawler {
       // this page by its distinctive content and auto-click Proceed.
       await this._bypassCorporateProxy(page);
 
-      // CAPTCHA check
+      // CAPTCHA check — wait 2.5s first so Cloudflare's automated JS challenge
+      // ("Just a moment...") has time to complete and redirect to the real page.
+      // Genuine CAPTCHAs never auto-resolve; this only helps bot-detection gates
+      // that validate headless browsers automatically before proceeding.
+      await page.waitForTimeout(2_500);
       if (await checkCaptcha(page)) {
         this.log(`  ⚠ CAPTCHA — skipping: ${url}`);
         result.captcha_detected = true;

@@ -1,5 +1,9 @@
 'use strict';
 
+// Identity status values — mirror result.js STATUS constants used in the engine
+const STATUS_PENDING = 'PENDING';
+const STATUS_NA      = 'N/A';
+
 // ══════════════════════════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1390,7 +1394,7 @@ const EXPORT_GROUPS = [
   {
     label: 'Identity',
     keys: [
-      'identity.status', 'identity.lookup_type', 'identity.attempts',
+      'identity.status', 'identity.lookup_type', 'identity.attempts', 'identity.endpoint',
       'identity.consumer_id', 'identity.ids',
       'identity.pro_node', 'identity.fpc_node', 'identity.cli_node', 'identity.note',
     ]
@@ -1549,6 +1553,7 @@ function finishCrawl() {
   delete statusEl.dataset.baseText;
   updateCounts();             // re-evaluate rerun button enabled state
   updateIdentityProgress();   // refresh progress badge
+  maybeAdvanceToStep6();      // advance walkthrough if everything is done
 }
 
 // Debounced renderTable — batches rapid updates during crawl/identity enrichment.
@@ -1738,13 +1743,19 @@ function syncConfigFromWalkthrough() {
 
 function maybeAdvanceToStep6() {
   if (state.mode !== 'walkthrough') return;
-  if (state.guidedStep !== 5) return;
-  if (state.running) return;
-  if (state.results.length === 0) return;
+  if (state.guidedStep !== 5)       return;
+  if (state.running)                return;
+  if (state.results.length === 0)   return;
 
-  // All identity lookups resolved? Status is PASS/WARN/FAIL/N/A (not pending/retry)
+  // All identity lookups resolved? Results with no identity object or no status
+  // never entered the queue (e.g. CAPTCHA skips) — treat them as done.
   const allDone = state.results.every(r => {
     const s = r.identity && r.identity.status;
+    // No status set, or result never entered identity queue — counts as done
+    if (!s) return true;
+    // CAPTCHA and navigation error results will never have identity resolved —
+    // their status stays PENDING forever. Treat them as done.
+    if (s === STATUS_PENDING && (r.captcha_detected || r.navigation_error)) return true;
     return s === 'PASS' || s === 'WARN' || s === 'FAIL' || s === 'N/A';
   });
 
@@ -1781,6 +1792,13 @@ function walkthroughRestart() {
   document.getElementById('wt-parse-error').classList.add('hidden');
   document.getElementById('wt-step1-next').disabled = true;
   document.getElementById('wt-step3-next').disabled = true;
+  // Reset step 3 input mode to Upload CSV (the default)
+  document.querySelectorAll('[data-wt-mode]').forEach(b => b.classList.remove('active'));
+  const wtFileBtn = document.querySelector('[data-wt-mode="file"]');
+  if (wtFileBtn) wtFileBtn.classList.add('active');
+  document.querySelectorAll('.wt-input-pane').forEach(p => p.classList.add('hidden'));
+  const wtFilePane = document.getElementById('wt-mode-file');
+  if (wtFilePane) wtFilePane.classList.remove('hidden');
   goToStep(1);
 }
 
@@ -2101,13 +2119,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Switches to Paste/Type tab and briefly flashes the textarea green so the
+  // user sees their file contents and knows parsing succeeded.
+  function switchToWtPasteView(content) {
+    wtPasteInput.value = content;
+    // Activate the Paste/Type tab
+    document.querySelectorAll('[data-wt-mode]').forEach(b => b.classList.remove('active'));
+    document.querySelector('[data-wt-mode="paste"]').classList.add('active');
+    document.querySelectorAll('.wt-input-pane').forEach(p => p.classList.add('hidden'));
+    document.getElementById('wt-mode-paste').classList.remove('hidden');
+    // Brief green border flash so the transition catches the eye
+    wtPasteInput.style.transition = 'border-color 0.15s';
+    wtPasteInput.style.borderColor = 'var(--accent)';
+    setTimeout(() => { wtPasteInput.style.borderColor = ''; }, 1200);
+    // Trigger parse
+    updateWalkthroughPreview(content);
+  }
+
   // Step 3 — file upload
   document.getElementById('wt-file-browse-btn').addEventListener('click', async () => {
     const content = await window.api.openCsv();
-    if (content) {
-      wtPasteInput.value = content;
-      updateWalkthroughPreview(content);
-    }
+    if (content) switchToWtPasteView(content);
   });
 
   const wtDropZone = document.getElementById('wt-file-drop-zone');
@@ -2119,10 +2151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const file = e.dataTransfer.files[0];
     if (file) {
       const r = new FileReader();
-      r.onload = ev => {
-        wtPasteInput.value = ev.target.result;
-        updateWalkthroughPreview(ev.target.result);
-      };
+      r.onload = ev => switchToWtPasteView(ev.target.result);
       r.readAsText(file);
     }
   });
