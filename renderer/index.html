@@ -498,22 +498,22 @@ MySQL table format:
 
     <h3>How it works</h3>
     <ul class="about-list">
-      <li><strong>Tag detection &amp; redirect chain analysis</strong> — navigates each tracking link in an isolated Chromium session, follows every redirect hop, and captures the full chain including server IPs. Detects UTT library load, Identify call firing, Shopify PageLoad requests, web pixel console signals, Traffic Guard, profile redirect (ojrq.net), and child/parent program routing.</li>
-      <li><strong>Cookie extraction</strong> — captures IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, and brwsr after page load. The incognito session means brwsr will not be present — the Profile Redirect signal confirms the ojrq.net lookup was attempted.</li>
-      <li><strong>Identity enrichment</strong> — after the crawl completes, queries impact.com's identity service using the IR_PI cookie (PRO lookup). Falls back to CLI (CustomProfileId) lookup if no PRO node is found — relevant for Shopify Plugin integrations. Up to 15 lookups run in parallel, retrying every 30 seconds for a maximum of ~5 minutes. Use the <strong>Stop Identity</strong> button if enrichment is taking too long — resolved rows are preserved, unresolved rows are marked N/A.</li>
-      <li><strong>Remediation engine</strong> — a priority-ordered rule engine evaluates each completed result and generates a specific, actionable recommendation. Rules cover integration type detection failures, UTT placement issues, Shopify plugin misconfiguration, click ID propagation failures, Traffic Guard interference, and identity graph issues.</li>
+      <li><span><strong>Tag detection &amp; redirect chain analysis</strong> — navigates each tracking link in an isolated Chromium session, follows every redirect hop, and captures the full chain including server IPs. Detects UTT library load, Identify call firing, Shopify PageLoad requests, web pixel console signals, Traffic Guard, profile redirect (ojrq.net), and child/parent program routing.</span></li>
+      <li><span><strong>Cookie extraction</strong> — captures IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, and brwsr after page load. The incognito session means brwsr will not be present — the Profile Redirect signal confirms the ojrq.net lookup was attempted.</span></li>
+      <li><span><strong>Identity enrichment</strong> — after the crawl completes, queries impact.com's identity service using the IR_PI cookie (PRO lookup). Falls back to CLI (CustomProfileId) lookup if no PRO node is found — relevant for Shopify Plugin integrations. Up to 15 lookups run in parallel, retrying every 30 seconds for a maximum of ~5 minutes. Use the <strong>Stop Identity</strong> button if enrichment is taking too long — resolved rows are preserved, unresolved rows are marked N/A.</span></li>
+      <li><span><strong>Remediation engine</strong> — a priority-ordered rule engine evaluates each completed result and generates a specific, actionable recommendation. Rules cover integration type detection failures, UTT placement issues, Shopify plugin misconfiguration, click ID propagation failures, Traffic Guard interference, and identity graph issues.</span></li>
     </ul>
 
     <h3>What it checks</h3>
     <ul class="about-list">
-      <li><strong>Click ID</strong> — present in final URL as a standalone parameter; whether it appears only embedded inside another parameter's value; click IDs link to the internal Event Repository showing the click's data and metadata</li>
-      <li><strong>Universal Tracking Tag</strong> — JavaScript library detection and load timing; the UTT library should be placed in <code>&lt;head&gt;</code> and the Identify call high in <code>&lt;body&gt;</code> after the library has loaded; validates Identify call path, status, CustomProfileId, CustomerId, and click ID in payload</li>
-      <li><strong>Shopify Plugin</strong> — PageLoad API request, web pixel console signal, consent API, integration source, click ID and CustomProfileId in payload</li>
-      <li><strong>Cookies</strong> — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, brwsr</li>
-      <li><strong>Implementation method</strong> — GTM, Tealium, Segment, Adobe Launch, or direct</li>
-      <li><strong>Redirect chain</strong> — full hop-by-hop with server IP addresses, profile redirect (ojrq.net), Traffic Guard, child/parent program routing</li>
-      <li><strong>Identity graph</strong> — enrichment via identity service API; consumer ID, PRO node (click's profile ID), FPC node (first-party cookie), CLI node (CustomProfileId cookie) — confirming identity stitching end-to-end</li>
-      <li><strong>Remediation</strong> — rule-based actionable recommendations generated automatically for each result</li>
+      <li><span><strong>Click ID</strong> — present in final URL as a standalone parameter; whether it appears only embedded inside another parameter's value; click IDs link to the internal Event Repository showing the click's data and metadata</span></li>
+      <li><span><strong>Universal Tracking Tag</strong> — JavaScript library detection and load timing; the UTT library should be placed in <code>&lt;head&gt;</code> and the Identify call high in <code>&lt;body&gt;</code> after the library has loaded; validates Identify call path, status, CustomProfileId, CustomerId, and click ID in payload</span></li>
+      <li><span><strong>Shopify Plugin</strong> — PageLoad API request, web pixel console signal, consent API, integration source, click ID and CustomProfileId in payload</span></li>
+      <li><span><strong>Cookies</strong> — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, brwsr</span></li>
+      <li><span><strong>Implementation method</strong> — GTM, Tealium, Segment, Adobe Launch, or direct</span></li>
+      <li><span><strong>Redirect chain</strong> — full hop-by-hop with server IP addresses, profile redirect (ojrq.net), Traffic Guard, child/parent program routing</span></li>
+      <li><span><strong>Identity graph</strong> — enrichment via identity service API; consumer ID, PRO node (click's profile ID), FPC node (first-party cookie), CLI node (CustomProfileId cookie) — confirming identity stitching end-to-end</span></li>
+      <li><span><strong>Remediation</strong> — rule-based actionable recommendations generated automatically for each result</span></li>
     </ul>
 
     <h3>Integration Types</h3>
@@ -541,12 +541,12 @@ MySQL table format:
 
     <h3>Limitations</h3>
     <ul class="about-list">
-      <li>Crawls run in a fresh incognito session — brwsr is set by the tracking domain as a third-party cookie, but the incognito session prevents it from being dropped</li>
-      <li>CAPTCHA-protected sites will block the headless browser — manual validation required for those results</li>
-      <li>All links use test partner ID <strong>2222</strong> — Traffic Guard may reject this for some programs; test with 1111 or a live link if this occurs</li>
-      <li>Sites with aggressive bot detection may time out or return unexpected results even when the integration is working correctly</li>
-      <li>Custom or server-side integrations (CAPI, trackConversion) are not detectable on the landing page and will appear as UNKNOWN or ClickId Integration</li>
-      <li>Stopping identity enrichment early marks unresolved rows as N/A — re-running the crawl will trigger a fresh enrichment attempt</li>
+      <li><span>Crawls run in a fresh incognito session — brwsr is set by the tracking domain as a third-party cookie, but the incognito session prevents it from being dropped</span></li>
+      <li><span>CAPTCHA-protected sites will block the headless browser — manual validation required for those results</span></li>
+      <li><span>All links use test partner ID <strong>2222</strong> — Traffic Guard may reject this for some programs; test with 1111 or a live link if this occurs</span></li>
+      <li><span>Sites with aggressive bot detection may time out or return unexpected results even when the integration is working correctly</span></li>
+      <li><span>Custom or server-side integrations (CAPI, trackConversion) are not detectable on the landing page and will appear as UNKNOWN or ClickId Integration</span></li>
+      <li><span>Stopping identity enrichment early marks unresolved rows as N/A — re-running the crawl will trigger a fresh enrichment attempt</span></li>
     </ul>
 
     <h3>Full documentation</h3>
