@@ -4,30 +4,33 @@
   "description": "TSE Tracking Validator — Internal Tool",
   "main": "main.js",
   "scripts": {
-    "start":     "electron .",
-    "dev":       "electron . --dev",
+    "start": "electron .",
+    "dev": "electron . --dev",
     "build:mac": "electron-builder --mac",
-    "release":   "electron-builder --mac --publish always"
+    "release": "electron-builder --mac --publish always"
   },
   "dependencies": {
-    "playwright":                     "^1.42.0",
-    "playwright-extra":               "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "csv-parse":                      "^5.5.3"
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "csv-parse": "^5.5.3",
+    "playwright": "^1.42.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "devDependencies": {
-    "electron":         "^30.0.0",
+    "electron": "^30.0.0",
     "electron-builder": "^24.13.0"
   },
   "build": {
-    "appId":       "com.impact.tse.tracking-validator",
+    "appId": "com.impact.tse.tracking-validator",
     "productName": "Tracking Validator",
-    "copyright":   "TSE — impact.com",
-    "directories": { "output": "dist" },
+    "copyright": "TSE — impact.com",
+    "directories": {
+      "output": "dist"
+    },
     "publish": {
       "provider": "github",
-      "owner":    "sBaronaImpact",
-      "repo":     "tracking_validator"
+      "owner": "sBaronaImpact",
+      "repo": "tracking_validator"
     },
     "files": [
       "main.js",
@@ -41,19 +44,32 @@
     "extraResources": [
       {
         "from": "pw-browsers",
-        "to":   "chromium",
-        "filter": ["**/*"]
+        "to": "chromium",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "mac": {
-      "target":   [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
       "category": "public.app-category.developer-tools",
-      "icon":     "assets/icon.icns"
+      "icon": "assets/icon.icns"
     },
     "dmg": {
-      "title":      "Tracking Validator ${version}",
+      "title": "Tracking Validator ${version}",
       "background": null,
-      "window":     { "width": 540, "height": 380 }
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     }
   }
 }
