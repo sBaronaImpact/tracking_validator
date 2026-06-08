@@ -7,14 +7,19 @@ const SHOPIFY_IDENTITY_COOKIES = [
 ];
 
 function detectIntegrationType(utt, shopify, clickIdCookieNames) {
-  const hasUttTag   = utt.tag_detected        === true;
-  const hasIdentify = utt.identify_call        === true;
-  const hasPageload = shopify.pageload_found   === true;
-  const hasWebPixel = shopify.web_pixel_console === true;
-  const hasShopify  = hasPageload || hasWebPixel;
+  const hasUttTag          = utt.tag_detected          === true;
+  const hasIdentify        = utt.identify_call          === true;
+  const hasShopifyPageload = shopify.pageload_found     === true &&
+                             shopify.integration_source === 'Shopify';
+  const hasDirectPageload  = shopify.pageload_found     === true &&
+                             shopify.integration_source !== 'Shopify';
+  const hasWebPixel        = shopify.web_pixel_console  === true;
+  const hasShopify         = hasShopifyPageload || hasWebPixel;
 
+  // UTT + Shopify signals → Hybrid
   if (hasUttTag && hasShopify) return INTEGRATION_TYPE.HYBRID;
 
+  // UTT only
   if (hasUttTag && hasIdentify && !hasShopify) {
     const cookieName = utt.cli_cookie_name || '';
     const usesShopifyCookie = SHOPIFY_IDENTITY_COOKIES.some(n => cookieName.includes(n));
@@ -22,11 +27,16 @@ function detectIntegrationType(utt, shopify, clickIdCookieNames) {
     return INTEGRATION_TYPE.UTT;
   }
 
-  if (hasShopify && !hasUttTag) return INTEGRATION_TYPE.SHOPIFY;
   if (hasUttTag && !hasShopify) return INTEGRATION_TYPE.UTT;
 
+  // Shopify Plugin only
+  if (hasShopify && !hasUttTag) return INTEGRATION_TYPE.SHOPIFY;
+
+  // Direct (non-Shopify) Page Load API call
+  if (hasDirectPageload) return INTEGRATION_TYPE.PAGELOADAPI;
+
   // No UTT, no Shopify, but click ID stored as a cookie → ClickId Integration
-  if (!hasUttTag && !hasShopify && clickIdCookieNames) {
+  if (!hasUttTag && !hasShopify && !hasDirectPageload && clickIdCookieNames) {
     return INTEGRATION_TYPE.CLICKID;
   }
 

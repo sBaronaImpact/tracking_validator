@@ -11,11 +11,12 @@ const STATUS = {
 };
 
 const INTEGRATION_TYPE = {
-  UTT:      'UTT',
-  SHOPIFY:  'SHOPIFY',
-  HYBRID:   'Potential Hybrid Integration',
-  CLICKID:  'ClickId Integration',
-  UNKNOWN:  'UNKNOWN',
+  UTT:         'UTT',
+  SHOPIFY:     'SHOPIFY',
+  HYBRID:      'Potential Hybrid Integration',
+  PAGELOADAPI: 'Page Load API Integration',
+  CLICKID:     'ClickId Integration',
+  UNKNOWN:     'UNKNOWN',
 };
 
 function createResult(input_url, campaign_id, click_id_param) {
@@ -69,6 +70,10 @@ function createResult(input_url, campaign_id, click_id_param) {
       time_to_tag_ms:        null,
       time_to_identify_ms:   null,
     },
+
+    // ── Page Load API ─────────────────────────────────────────────────────────
+    // Populated when a non-Shopify PLA call is detected (Page Load API Integration)
+    pla_payload: null,   // raw parsed payload object from the PLA request
 
     // ── Shopify ───────────────────────────────────────────────────────
     shopify: {

@@ -94,7 +94,7 @@ async function tryAcceptConsent(page) {
   }
   try {
     const clicked = await page.evaluate(() => {
-      const phrases = ['accept all', 'accept cookies', 'allow all', 'i agree', 'agree & close', 'got it'];
+      const phrases = ['accept all', 'accept cookies', 'allow all', 'i agree', 'agree & close', 'got it', 'accept & continue', 'accept and continue'];
       const els = Array.from(document.querySelectorAll('button, [role="button"], a.btn, input[type="button"]'));
       for (const el of els) {
         const text = (el.textContent || el.value || '').trim().toLowerCase();

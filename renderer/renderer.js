@@ -44,7 +44,7 @@ const COL_GROUPS = [
     id: 'general', label: 'General', always: true,
     cols: [
       { key: 'integration_type',   label: 'Integration Type',          type: 'text',   w: 140,
-        tip: 'The integration method detected on the landing page: UTT, SHOPIFY, Potential Hybrid Integration, ClickId Integration, or UNKNOWN.' },
+        tip: 'The integration method detected on the landing page: UTT, SHOPIFY, Potential Hybrid Integration, Page Load API Integration, ClickId Integration, or UNKNOWN.' },
       { key: 'input_url', label: 'Tracking Link', type: 'url', w: 220,
         tip: 'The tracking link as input. Click any row to open the detail panel.' },
       { key: 'final_url',          label: 'Final URL',                type: 'url',    w: 200,
@@ -218,7 +218,29 @@ function computeRemediation(r) {
 
   // ClickId Integration
   if (type === 'ClickId Integration') {
-    notes.push('Click ID stored as a cookie but no landing page tracking detected via UTT. The client may be using the Click ID strictly for attribution. Verify conversion submission method using internal tools (Loggly, SQL, etc.).');
+    notes.push(
+      'This brand captures and stores the ClickId as a cookie. There are no signs of landing page tracking via UTT or Page Load API — it\'s likely they conditionally trigger conversions and only submit them when a ClickId is present.\n\n' +
+      'It is recommended that the client implement landing page tracking (UTT or Page Load API) to align with impact\'s tracking best practices.'
+    );
+    return notes.join('\n\n');
+  }
+
+  // Page Load API Integration
+  if (type === 'Page Load API Integration') {
+    if (r.click_id_cookie_names) {
+      notes.push(
+        'This client is making a Page Load API call and stores the ClickId as a cookie. This is unusual behavior and the integration should be evaluated manually.\n\n' +
+        'Check the program\'s tracking efficacy and conversion logs to validate whether they are:\n' +
+        '  1. Passing CustomProfileId in the conversion payload, or\n' +
+        '  2. Depending solely on ClickId for attribution.\n\n' +
+        'They should not be conditionally firing conversions when ClickId is explicitly passed — that would defeat the purpose of having a PLA implementation. See Tracking SMEs if assistance is needed.'
+      );
+    } else {
+      notes.push(
+        'Page Load API call detected. Validate the payload contains the correct CustomProfileId and PageURL fields.\n\n' +
+        'Check the program\'s tracking efficacy score — if below the threshold of 70%, please do a thorough investigation by adjusting the report\'s filters as needed (investigation includes manual testing with PLA logs enabled) and provide guidance on how to optimize and improve tracking efficacy.'
+      );
+    }
     return notes.join('\n\n');
   }
 
@@ -274,6 +296,19 @@ function computeRemediation(r) {
 
   // Hybrid redundancy — only warn when BOTH the Shopify PageLoad API request
   // AND the UTT Identify call are firing. A Hybrid detection caused solely by
+  // UTT using a Shopify identity cookie as CustomProfileId → explain the integration
+  const SHOPIFY_COOKIE_PATTERN = /(_shopify_y|shopify_client_id|_shopify_sa_t|_shopify_sa_p|_shopify_fs)/;
+  if (type === 'Potential Hybrid Integration' &&
+      utt.cli_cookie_name &&
+      SHOPIFY_COOKIE_PATTERN.test(utt.cli_cookie_name)) {
+    notes.push(
+      `This integration is potentially a UTT+Shopify Plugin Hybrid. The Identify call contained a CustomProfileId mapped to a Shopify cookie (${utt.cli_cookie_name}) — typically, the Shopify Plugin web-pixel and PageLoad API call is expected to fire on the checkout page.\n\n` +
+      `Note that current Hybrid integrations don't rely on the brand passing any particular Shopify cookie as a CustomProfileId in the Identify call. The plugin will now pick up the ClickId from the IR_{program_id} cookie set by the UTT.\n\n` +
+      `For testing, make sure that the CustomProfileId is persisted to the checkout PageLoad API event, and that the PageLoad API payload contains the ClickId and other relevant cookie values used for attribution.`
+    );
+    return notes.join('\n\n');
+  }
+
   // UTT using a Shopify cookie (_shopify_y) as CustomProfileId is a legitimate
   // single-method integration — UTT is the only active tracking, the client
   // is just using the Shopify session cookie as their visitor identifier.
@@ -671,6 +706,7 @@ function filteredResults() {
     'UTT':     'UTT',
     'SHOPIFY': 'SHOPIFY',
     'HYBRID':  'Potential Hybrid Integration',
+    'PLA':     'Page Load API Integration',
     'CLICKID': 'ClickId Integration',
   };
   const q = (state.searchQuery || '').trim().toLowerCase();
@@ -941,6 +977,18 @@ function renderDrawer() {
 
   // 3. Universal Tracking Tag
   if (r.utt && r.utt.tag_detected !== 'N/A') {
+    // Reconstruct identify payload from available UTT fields
+    const uttPayload = (() => {
+      if (r.utt.identify_call !== true) return null;
+      const p = {};
+      if (r.utt.cli_value)      p.customProfileId = r.utt.cli_value;
+      if (r.utt.cus_id_value)   p.customerId      = r.utt.cus_id_value;
+      if (r.utt.click_id_in_payload === true && r.click_id) p.clickId = r.click_id;
+      if (r.utt.ir_field)       p.irField         = r.utt.ir_field;
+      return Object.keys(p).length > 0 ? JSON.stringify(p, null, 2) : null;
+    })();
+    if (uttPayload) copyValues['utt_payload'] = uttPayload;
+
     html += section('Universal Tracking Tag',
       bool ('UTT Library',            r.utt.tag_detected) +
       bool ('Identify Call',          r.utt.identify_call) +
@@ -957,13 +1005,37 @@ function renderDrawer() {
       field('ir_field',               r.utt.ir_field) +
       field('Method',                 r.utt.implementation_method) +
       field('UTT Library ms',         r.utt.time_to_tag_ms) +
-      field('Identify ms',            r.utt.time_to_identify_ms),
+      field('Identify ms',            r.utt.time_to_identify_ms) +
+      (uttPayload ? block('identify payload', uttPayload, 'utt_payload') : ''),
       'utt'
     );
   }
 
-  // 4. Shopify
+  // 4a. Page Load API Integration
+  if (r.integration_type === 'Page Load API Integration' && r.pla_payload) {
+    const plaJson = JSON.stringify(r.pla_payload, null, 2);
+    html += section('Page Load API',
+      field('Pageload ms', r.shopify && r.shopify.time_to_pageload_ms) +
+      block('payload', plaJson, 'pla_payload'),
+      'pla'
+    );
+  }
+
+  // 4b. Shopify
   if (r.shopify && r.shopify.pageload_found !== 'N/A') {
+    const shopifyPayload = r.integration_type === 'SHOPIFY' && r.shopify.pageload_found === true
+      ? (() => {
+          // Reconstruct payload fields for display — only show if Shopify integration
+          const p = {};
+          if (r.shopify.integration_source)       p.IntegrationSource  = r.shopify.integration_source;
+          if (r.shopify.cli_value)                p.CustomProfileId    = r.shopify.cli_value;
+          if (r.shopify.cus_id_value)             p.CustomerId         = r.shopify.cus_id_value;
+          if (r.shopify.first_party_cookie_field !== null && r.shopify.first_party_cookie_field !== undefined)
+                                                  p.FirstPartyCookie   = r.shopify.first_party_cookie_field;
+          if (r.shopify.click_id_in_payload === true) p.ClickId = r.click_id;
+          return Object.keys(p).length > 0 ? JSON.stringify(p, null, 2) : null;
+        })()
+      : null;
     html += section('Shopify',
       bool ('Pageload Call',          r.shopify.pageload_found) +
       field('pageload_status',        r.shopify.pageload_status) +
@@ -977,7 +1049,14 @@ function renderDrawer() {
       custId('CustomerId',            r.shopify.cus_id_present) +
       field('first_party_cookie',     r.shopify.first_party_cookie_field) +
       bool ('Web Pixel',              r.shopify.web_pixel_console) +
-      field('Consent API',            r.shopify.shopify_consent),
+      field('Consent API',            r.shopify.shopify_consent) +
+      (shopifyPayload
+        ? `<div class="dv-field"><div class="dv-label">payload</div>` +
+          `<div class="dv-value"><pre style="margin:0;font-size:10px;line-height:1.5;color:var(--text-dim);` +
+          `white-space:pre-wrap;word-break:break-all;background:var(--bg-input);` +
+          `border:1px solid var(--border);border-radius:4px;padding:8px;overflow-x:auto">` +
+          `${esc(shopifyPayload)}</pre></div></div>`
+        : ''),
       'shopify'
     );
   }
@@ -1134,6 +1213,7 @@ function updateCounts() {
   document.getElementById('count-utt').textContent     = rs.filter(r => r.integration_type === 'UTT').length;
   document.getElementById('count-shopify').textContent = rs.filter(r => r.integration_type === 'SHOPIFY').length;
   document.getElementById('count-hybrid').textContent  = rs.filter(r => r.integration_type === 'Potential Hybrid Integration').length;
+  document.getElementById('count-pla').textContent     = rs.filter(r => r.integration_type === 'Page Load API Integration').length;
   document.getElementById('count-clickid').textContent = rs.filter(r => r.integration_type === 'ClickId Integration').length;
   document.getElementById('count-unknown').textContent = rs.filter(r => r.integration_type === 'UNKNOWN').length;
   document.getElementById('count-issues').textContent  = rs.filter(r => {
@@ -1381,6 +1461,7 @@ const EXPORT_GROUPS = [
       'utt.click_id_in_payload', 'utt.click_id_cookies',
       'utt.ir_field', 'utt.implementation_method',
       'utt.time_to_tag_ms', 'utt.time_to_identify_ms',
+      'utt.identify_payload',
     ]
   },
   {
@@ -1391,7 +1472,12 @@ const EXPORT_GROUPS = [
       'shopify.cli_present', 'shopify.cli_value', 'shopify.cli_cookie_name',
       'shopify.cus_id_present', 'shopify.cus_id_value', 'shopify.cus_id_cookie_name',
       'shopify.first_party_cookie_field', 'shopify.web_pixel_console', 'shopify.shopify_consent',
+      'shopify._payload_json',
     ]
+  },
+  {
+    label: 'Page Load API',
+    keys: ['pla_payload_json'],
   },
   {
     label: 'Identity',
@@ -1411,10 +1497,43 @@ const EXPORT_GROUPS = [
   },
 ];
 
-function flattenResult(r) {
+function flattenResult(r, format) {
+  const pretty = format !== 'sheets'; // CSV and default: pretty-print JSON; sheets: single-line
   const get = key => {
     // Special: tracking_link is the exported label for input_url
     if (key === 'tracking_link') return r.input_url || 'N/A';
+    // Special: UTT identify payload JSON
+    if (key === 'utt.identify_payload') {
+      if (!r.utt || r.utt.identify_call !== true) return 'N/A';
+      const p = {};
+      if (r.utt.cli_value)                          p.customProfileId = r.utt.cli_value;
+      if (r.utt.cus_id_value)                       p.customerId      = r.utt.cus_id_value;
+      if (r.utt.click_id_in_payload === true && r.click_id) p.clickId = r.click_id;
+      if (r.utt.ir_field)                           p.irField         = r.utt.ir_field;
+      return Object.keys(p).length > 0
+        ? (pretty ? JSON.stringify(p, null, 2) : JSON.stringify(p))
+        : 'N/A';
+    }
+    // Special: PLA payload — pretty for CSV, single-line for Sheets
+    if (key === 'pla_payload_json') {
+      return r.pla_payload
+        ? (pretty ? JSON.stringify(r.pla_payload, null, 2) : JSON.stringify(r.pla_payload))
+        : 'N/A';
+    }
+    // Special: Shopify payload JSON — pretty for CSV, single-line for Sheets
+    if (key === 'shopify._payload_json') {
+      if (!r.shopify || r.shopify.pageload_found !== true) return 'N/A';
+      const p = {};
+      if (r.shopify.integration_source)  p.IntegrationSource = r.shopify.integration_source;
+      if (r.shopify.cli_value)           p.CustomProfileId   = r.shopify.cli_value;
+      if (r.shopify.cus_id_value)        p.CustomerId        = r.shopify.cus_id_value;
+      if (r.shopify.first_party_cookie_field !== null && r.shopify.first_party_cookie_field !== undefined)
+                                         p.FirstPartyCookie  = r.shopify.first_party_cookie_field;
+      if (r.shopify.click_id_in_payload === true) p.ClickId = r.click_id;
+      return Object.keys(p).length > 0
+        ? (pretty ? JSON.stringify(p, null, 2) : JSON.stringify(p))
+        : 'N/A';
+    }
     const v = getVal(r, key);
     if (v === null || v === undefined) return 'N/A';
     if (typeof v === 'boolean') return v ? 'true' : 'false';
@@ -1439,12 +1558,12 @@ function exportCsv(opts = {}) {
   const escape  = v => { const s = String(v); return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s; };
 
   const groupRow = EXPORT_GROUPS.flatMap(g => [g.label, ...Array(g.keys.length - 1).fill('')]);
-  const { keys } = flattenResult(rows[0]);
+  const { keys } = flattenResult(rows[0], 'csv');
 
   const csvRows = [
     groupRow.map(escape).join(','),
     keys.map(escape).join(','),
-    ...rows.map(r => flattenResult(r).values.map(escape).join(',')),
+    ...rows.map(r => flattenResult(r, 'csv').values.map(escape).join(',')),
   ];
 
   const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
@@ -1462,12 +1581,12 @@ function exportSheets() {
   const tsvCell  = v => String(v).replace(/\t/g, ' ').replace(/\n/g, ' │ ');
 
   const groupRow = EXPORT_GROUPS.flatMap(g => [g.label, ...Array(g.keys.length - 1).fill('')]);
-  const { keys } = flattenResult(filtered[0]);
+  const { keys } = flattenResult(filtered[0], 'sheets');
 
   const rows = [
     groupRow.join('\t'),
     keys.join('\t'),
-    ...filtered.map(r => flattenResult(r).values.map(tsvCell).join('\t')),
+    ...filtered.map(r => flattenResult(r, 'sheets').values.map(tsvCell).join('\t')),
   ];
 
   navigator.clipboard.writeText(rows.join('\n')).then(() => {
@@ -1552,6 +1671,7 @@ function finishCrawl() {
   cancelBtn.textContent = 'Cancel';
   const statusEl = document.getElementById('terminal-status');
   statusEl.textContent = `Done — ${state.results.length} URL${state.results.length !== 1 ? 's' : ''}`;
+  statusEl.style.color = '';  // clear any cancellation color
   delete statusEl.dataset.baseText;
   updateCounts();             // re-evaluate rerun button enabled state
   updateIdentityProgress();   // refresh progress badge
@@ -1940,9 +2060,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.api.cancelCrawl();
       state.cancelRequested = true;
       logLine('⚠ Cancellation requested. Click Cancel again to force-reset.');
-      // Update button text to indicate the next click is more forceful
       const btn = document.getElementById('cancel-btn');
       btn.textContent = 'Force Reset';
+      // Also update the status bar — visible regardless of scroll position
+      const statusEl = document.getElementById('terminal-status');
+      statusEl.textContent = 'Cancelling… click Force Reset if stuck';
+      statusEl.style.color = 'var(--amber)';
     }
   });
 

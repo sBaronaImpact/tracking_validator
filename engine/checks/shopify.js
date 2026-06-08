@@ -8,6 +8,17 @@ function isPageloadUrl(urlString) {
   catch { return false; }
 }
 
+// A request qualifies as a PLA call only if its body is valid JSON
+// containing at minimum a PageUrl field — this prevents false positives
+// from unrelated requests whose URL path happens to contain "pageload".
+function isValidPlaPayload(body) {
+  if (!body) return false;
+  try {
+    const parsed = JSON.parse(body);
+    return !!(parsed.PageUrl || parsed.pageUrl);
+  } catch { return false; }
+}
+
 function parsePageloadPayload(body) {
   if (!body) return {};
   try { return JSON.parse(body); } catch {}
@@ -30,8 +41,14 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
     m.text.toLowerCase().includes('web-pixel') || m.text.toLowerCase().includes('webpixel')
   );
 
+  // Filter to only genuine PLA events — must have PageUrl in body to avoid false positives
+  // from unrelated requests whose URL path happens to contain "pageload"
+  const validPageloadEvents = networkEvents.filter(e =>
+    e.pageloadRequest && isValidPlaPayload(e.requestBody)
+  );
+
   // Return all N/A if no Shopify signals at all
-  if (networkEvents.length === 0 && webPixelMessages.length === 0) {
+  if (validPageloadEvents.length === 0 && webPixelMessages.length === 0) {
     return {
       pageload_found:           STATUS.NA,
       pageload_status:          null,
@@ -49,6 +66,7 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
       web_pixel_console:        STATUS.NA,
       web_pixel_console_status: null,
       shopify_consent:          null,
+      _pla_payload:             null,
     };
   }
 
@@ -69,17 +87,23 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
     web_pixel_console:        STATUS.FAIL,
     web_pixel_console_status: null,
     shopify_consent:          null,
+    _pla_payload:             null,          // raw payload for Page Load API Integration type
   };
 
   // ── PageLoad request ───────────────────────────────────────────────
-  const ev = networkEvents.find(e => e.pageloadRequest);
+  const ev = validPageloadEvents.find(e => e.pageloadRequest);
   if (ev) {
-    result.pageload_found     = STATUS.PASS;
-    result.pageload_status    = ev.status;
+    result.pageload_found      = STATUS.PASS;
+    result.pageload_status     = ev.status;
     result.time_to_pageload_ms = ev.timeSinceStart != null ? ev.timeSinceStart : null;
 
     const payload = parsePageloadPayload(ev.requestBody || '');
     result.integration_source = payload.IntegrationSource || payload.integrationSource || null;
+
+    // Store raw payload for direct (non-Shopify) PLA — lifted to result.pla_payload by crawler
+    if (result.integration_source !== 'Shopify') {
+      result._pla_payload = payload;
+    }
 
     // click_id
     const clickId = payload.ClickId || payload.clickid || null;
@@ -102,7 +126,7 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
         result.cli_present = STATUS.WARN;
       }
     } else {
-      result.cli_present = STATUS.NA; // field not present in payload
+      result.cli_present = STATUS.NA;
     }
 
     // cus_id — WARN if present
@@ -139,4 +163,4 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
   return result;
 }
 
-module.exports = { runShopifyChecks, isPageloadUrl };
+module.exports = { runShopifyChecks, isPageloadUrl, isValidPlaPayload };

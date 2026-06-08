@@ -9,6 +9,14 @@ const { detectIntegrationType }            = require('./checks/hybrid');
 const { findCookieByName, findCookiesByValue } = require('./checks/cookies');
 const { IdentityQueue }                    = require('./identity');
 
+// Strip Playwright's verbose "Browser logs: <launching>..." from error messages.
+// These are Chromium's internal stderr and not useful to end users.
+function cleanErrMsg(msg) {
+  if (!msg) return 'unknown error';
+  const cut = msg.indexOf(' Browser logs:');
+  return cut >= 0 ? msg.substring(0, cut).trim() : msg;
+}
+
 class Crawler {
   constructor(config, onLog, onResult, onIdentityUpdate, onDone, onIdentityDone) {
     this.config = {
@@ -30,6 +38,7 @@ class Crawler {
 
   async run(urlObjects) {
     this.cancelled = false;
+    this.browserManager = new BrowserManager(); // fresh instance — avoids stale state from prior cancel/close
     try {
       await this.browserManager.launch();
       this.log(`▶ Starting crawl — ${urlObjects.length} URL(s), concurrency: ${this.config.concurrency}`);
@@ -59,7 +68,7 @@ class Crawler {
         }
       }
     } catch (e) {
-      this.log(`✖ Fatal error in run loop: ${e.message}`);
+      this.log(`✖ Fatal error in run loop: ${cleanErrMsg(e.message)}`);
     } finally {
       try { await this.browserManager.close(); } catch { /* ignore */ }
       this.log(this.cancelled ? '✖ Crawl cancelled.' : '✔ Crawl complete.');
@@ -143,7 +152,7 @@ class Crawler {
     }
 
     // All attempts failed — emit a single final failure result
-    const msg     = lastError ? lastError.message : 'unknown error';
+    const msg     = lastError ? cleanErrMsg(lastError.message) : 'unknown error';
     const result  = createResult(urlObj.url, urlObj.campaignId, urlObj.clickIdParam);
     if (urlObj.id) result.id = urlObj.id; // preserve ID for re-run replace-in-place
     result.navigation_error         = true;
@@ -474,6 +483,12 @@ class Crawler {
         result.click_id,
       );
 
+      // Lift PLA payload to top-level (set by shopify checks for non-Shopify pageload calls)
+      if (result.shopify._pla_payload) {
+        result.pla_payload = result.shopify._pla_payload;
+      }
+      delete result.shopify._pla_payload;
+
       // Build cookies string AFTER checks so referenced cookies are included.
       const referencedNames = new Set();
       [
@@ -501,7 +516,7 @@ class Crawler {
     } catch (error) {
       // Don't emit here — _processWithRetry is the sole emitter and decides
       // whether to retry. Just propagate the error.
-      this.log(`  ✖ Error: ${url} — ${error.message}`);
+      this.log(`  ✖ Error: ${url} — ${cleanErrMsg(error.message)}`);
       throw error;
     } finally {
       try { if (cdpClient) await cdpClient.detach(); } catch {}
