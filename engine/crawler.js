@@ -38,6 +38,12 @@ class Crawler {
 
   async run(urlObjects) {
     this.cancelled = false;
+    // Wait for any previous browser close to fully complete before launching a new one.
+    // Without this, the new Chromium launch races against the SIGKILL cleanup of the old one.
+    if (this._closePromise) {
+      await this._closePromise.catch(() => {});
+      this._closePromise = null;
+    }
     this.browserManager = new BrowserManager(); // fresh instance — avoids stale state from prior cancel/close
     try {
       await this.browserManager.launch();
@@ -82,8 +88,8 @@ class Crawler {
     this.cancelled = true;
     this.log('⚠ Cancellation requested — aborting in-flight requests…');
     // Force-close the browser to make all in-flight Playwright ops fail fast.
-    // Each _processWithTimeout catches the resulting errors and resolves cleanly.
-    this.browserManager.close().catch(() => { /* ignore */ });
+    // Store the close promise so run() can await full cleanup before relaunching.
+    this._closePromise = this.browserManager.close().catch(() => {});
   }
 
   // Hard cap on per-URL processing time. The shared `emit` closure ensures
