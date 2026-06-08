@@ -5,8 +5,8 @@ const path  = require('path');
 const fs    = require('fs');
 const https = require('https');
 
-const REPO_OWNER = 'ImpactInc';
-const REPO_NAME  = 'ts-tracking-validator';
+const REPO_OWNER = 'sBaronaImpact';
+const REPO_NAME  = 'tracking_validator';
 
 // ── Config persistence ─────────────────────────────────────────────────────────
 const CONFIG_PATH    = path.join(app.getPath('userData'), 'tv-config.json');
@@ -37,9 +37,8 @@ function checkForUpdates(win) {
   const url     = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest`;
   const options = {
     headers: {
-      'User-Agent':    'tracking-validator-app',
-      'Accept':        'application/vnd.github+json',
-      'Authorization': 'Bearer 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',
+      'User-Agent': 'tracking-validator-app',
+      'Accept':     'application/vnd.github+json',
     },
     rejectUnauthorized: false,
   };
