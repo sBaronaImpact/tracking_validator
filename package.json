@@ -26,8 +26,8 @@
     "directories": { "output": "dist" },
     "publish": {
       "provider": "github",
-      "owner":    "ImpactInc",
-      "repo":     "ts-tracking-validator"
+      "owner":    "sBaronaImpact",
+      "repo":     "tracking_validator"
     },
     "files": [
       "main.js",
