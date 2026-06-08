@@ -33,7 +33,7 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium
         env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/node_modules/playwright/.local-browsers
 
       - name: Build & publish arm64 DMG
         env:
@@ -75,7 +75,7 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium
         env:
-          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/pw-browsers
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/node_modules/playwright/.local-browsers
 
       - name: Build & publish x64 DMG
         env:
