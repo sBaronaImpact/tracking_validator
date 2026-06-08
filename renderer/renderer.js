@@ -1099,10 +1099,9 @@ function renderDrawer() {
       e.stopPropagation();
       const key = btn.dataset.copy;
       navigator.clipboard.writeText(copyValues[key] || '').then(() => {
-        const orig = btn.textContent;
         btn.textContent = 'Copied';
         btn.classList.add('copied');
-        setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
       });
     });
   });
@@ -1160,10 +1159,31 @@ function buildPlainText(r) {
     add('Method',                 r.utt.implementation_method);
     add('UTT Library ms',         r.utt.time_to_tag_ms);
     add('Identify ms',            r.utt.time_to_identify_ms);
+    // Identify payload JSON
+    if (r.utt.identify_call === true) {
+      const p = {};
+      if (r.utt.cli_value)                              p.customProfileId = r.utt.cli_value;
+      if (r.utt.cus_id_value)                           p.customerId      = r.utt.cus_id_value;
+      if (r.utt.click_id_in_payload === true && r.click_id) p.clickId     = r.click_id;
+      if (r.utt.ir_field)                               p.irField         = r.utt.ir_field;
+      if (Object.keys(p).length > 0) {
+        lines.push('identify_payload:');
+        lines.push(JSON.stringify(p, null, 2));
+      }
+    }
   }
 
-  // 4. Shopify
-  if (r.shopify && r.shopify.pageload_found !== 'N/A') {
+  // 4. Page Load API Integration
+  if (r.integration_type === 'Page Load API Integration' && r.pla_payload) {
+    lines.push('', '=== PAGE LOAD API ===');
+    add('Pageload ms', r.shopify && r.shopify.time_to_pageload_ms);
+    lines.push('payload:');
+    lines.push(JSON.stringify(r.pla_payload, null, 2));
+  }
+
+  // 4b. Shopify — suppress for Page Load API Integration
+  if (r.shopify && r.shopify.pageload_found !== 'N/A' &&
+      r.integration_type !== 'Page Load API Integration') {
     lines.push('', '=== SHOPIFY ===');
     add('Pageload Call',          r.shopify.pageload_found);
     add('pageload_status',        r.shopify.pageload_status);
@@ -1176,6 +1196,17 @@ function buildPlainText(r) {
     add('CustomerId',             r.shopify.cus_id_present);
     add('Web Pixel',              r.shopify.web_pixel_console);
     add('Consent API',            r.shopify.shopify_consent);
+    // Shopify payload JSON
+    const sp = {};
+    if (r.shopify.integration_source)  sp.IntegrationSource = r.shopify.integration_source;
+    if (r.shopify.cli_value)           sp.CustomProfileId   = r.shopify.cli_value;
+    if (r.shopify.cus_id_value)        sp.CustomerId        = r.shopify.cus_id_value;
+    if (r.shopify.first_party_cookie_field != null) sp.FirstPartyCookie = r.shopify.first_party_cookie_field;
+    if (r.shopify.click_id_in_payload === true) sp.ClickId = r.click_id;
+    if (Object.keys(sp).length > 0) {
+      lines.push('payload:');
+      lines.push(JSON.stringify(sp, null, 2));
+    }
   }
 
   // 5. Identity

@@ -145,8 +145,9 @@ class Crawler {
         return;
       } catch (error) {
         lastError = error;
+        if (this.cancelled) break; // don't retry if cancelled — exit loop immediately
         if (attempt < maxAttempts) {
-          this.log(`  ↻ Retry ${attempt}/${this.config.retryCount}: ${urlObj.url} — ${error.message}`);
+          this.log(`  ↻ Retry ${attempt}/${this.config.retryCount}: ${urlObj.url} — ${cleanErrMsg(error.message)}`);
         }
       }
     }
