@@ -38,6 +38,13 @@ function determineLookupStrategy(result) {
     return { value: cpid, type: '_CLI', fallback: null };
   }
 
+  if (type === INTEGRATION_TYPE.PAGELOADAPI) {
+    // Use CustomProfileId from the PLA payload for CLI lookup
+    const cpid = result.pla_payload?.CustomProfileId || result.pla_payload?.customProfileId || null;
+    if (!cpid) return null;
+    return { value: cpid, type: '_CLI', fallback: null };
+  }
+
   return null;
 }
 
@@ -140,6 +147,8 @@ class IdentityQueue {
       return 'IR_PI cookie and CustomProfileId (CLI) not found — identity enrichment skipped';
     if (type === INTEGRATION_TYPE.SHOPIFY)
       return 'cli_value not found in PageLoad payload — identity enrichment skipped';
+    if (type === INTEGRATION_TYPE.PAGELOADAPI)
+      return 'CustomProfileId not found in PLA payload — identity enrichment skipped';
     return 'Integration type unknown — identity enrichment skipped';
   }
 

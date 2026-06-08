@@ -233,7 +233,7 @@ function computeRemediation(r) {
         'Check the program\'s tracking efficacy and conversion logs to validate whether they are:\n' +
         '  1. Passing CustomProfileId in the conversion payload, or\n' +
         '  2. Depending solely on ClickId for attribution.\n\n' +
-        'They should not be conditionally firing conversions when ClickId is explicitly passed — that would defeat the purpose of having a PLA implementation. See Tracking SMEs if assistance is needed.'
+        'The brand should not be sending only conversions that contain ClickId — if this is the case, they are not properly set up and/or optimizing their PLA integration. The client should be submitting ALL conversions to impact, including those that exclude ClickId and contain identifiers like CustomProfileId, CustomerId, or CustomerEmail. See Tracking SMEs if assistance is needed.'
       );
     } else {
       notes.push(
@@ -1021,8 +1021,9 @@ function renderDrawer() {
     );
   }
 
-  // 4b. Shopify
-  if (r.shopify && r.shopify.pageload_found !== 'N/A') {
+  // 4b. Shopify — only show for SHOPIFY and HYBRID integration types
+  if (r.shopify && r.shopify.pageload_found !== 'N/A' &&
+      r.integration_type !== 'Page Load API Integration') {
     const shopifyPayload = r.integration_type === 'SHOPIFY' && r.shopify.pageload_found === true
       ? (() => {
           // Reconstruct payload fields for display — only show if Shopify integration
@@ -1500,6 +1501,8 @@ const EXPORT_GROUPS = [
 function flattenResult(r, format) {
   const pretty = format !== 'sheets'; // CSV and default: pretty-print JSON; sheets: single-line
   const get = key => {
+    // Special: suppress Shopify fields for Page Load API Integration — data belongs in PLA section
+    if (key.startsWith('shopify.') && r.integration_type === 'Page Load API Integration') return 'N/A';
     // Special: tracking_link is the exported label for input_url
     if (key === 'tracking_link') return r.input_url || 'N/A';
     // Special: UTT identify payload JSON
