@@ -490,11 +490,13 @@ class Crawler {
         result.click_id,
       );
 
-      // Lift PLA payload to top-level (set by shopify checks for non-Shopify pageload calls)
+      // Lift PLA payload and intrasite flag to top-level
       if (result.shopify._pla_payload) {
-        result.pla_payload = result.shopify._pla_payload;
+        result.pla_payload         = result.shopify._pla_payload;
+        result.pla_intrasite_click = result.shopify._pla_intrasite_click || false;
       }
       delete result.shopify._pla_payload;
+      delete result.shopify._pla_intrasite_click;
 
       // Build cookies string AFTER checks so referenced cookies are included.
       const referencedNames = new Set();

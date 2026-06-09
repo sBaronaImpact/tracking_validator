@@ -9,14 +9,34 @@ function isPageloadUrl(urlString) {
 }
 
 // A request qualifies as a PLA call only if its body is valid JSON
-// containing at minimum a PageUrl field — this prevents false positives
-// from unrelated requests whose URL path happens to contain "pageload".
+// containing at minimum a PageUrl field — prevents false positives.
 function isValidPlaPayload(body) {
   if (!body) return false;
   try {
     const parsed = JSON.parse(body);
     return !!(parsed.PageUrl || parsed.pageUrl);
   } catch { return false; }
+}
+
+// Extract registrable domain (e.g. "eufy.com" from "www.eufy.com")
+function getRegistrableDomain(urlString) {
+  if (!urlString) return null;
+  try {
+    const host = new URL(urlString).hostname.toLowerCase();
+    const parts = host.split('.');
+    return parts.length >= 2 ? parts.slice(-2).join('.') : host;
+  } catch { return null; }
+}
+
+// Detect intrasite click: PageUrl and ReferringUrl share the same registrable domain
+function detectIntrasiteClick(payload) {
+  if (!payload) return false;
+  const pageUrl = payload.PageUrl || payload.pageUrl || '';
+  const refUrl  = payload.ReferringUrl || payload.referringUrl || '';
+  if (!pageUrl || !refUrl) return false;
+  const pageDomain = getRegistrableDomain(pageUrl);
+  const refDomain  = getRegistrableDomain(refUrl);
+  return !!(pageDomain && refDomain && pageDomain === refDomain);
 }
 
 function parsePageloadPayload(body) {
@@ -36,18 +56,15 @@ function cookieNamesFromMatches(matches) {
 }
 
 async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, click_id) {
-  // Web-pixel console messages
   const webPixelMessages = consoleMessages.filter(m =>
     m.text.toLowerCase().includes('web-pixel') || m.text.toLowerCase().includes('webpixel')
   );
 
-  // Filter to only genuine PLA events — must have PageUrl in body to avoid false positives
-  // from unrelated requests whose URL path happens to contain "pageload"
+  // Filter to only genuine PLA events — must have PageUrl in body
   const validPageloadEvents = networkEvents.filter(e =>
     e.pageloadRequest && isValidPlaPayload(e.requestBody)
   );
 
-  // Return all N/A if no Shopify signals at all
   if (validPageloadEvents.length === 0 && webPixelMessages.length === 0) {
     return {
       pageload_found:           STATUS.NA,
@@ -67,6 +84,7 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
       web_pixel_console_status: null,
       shopify_consent:          null,
       _pla_payload:             null,
+      _pla_intrasite_click:     false,
     };
   }
 
@@ -80,17 +98,17 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
     cli_present:              STATUS.FAIL,
     cli_value:                null,
     cli_cookie_name:          null,
-    cus_id_present:           STATUS.PASS,   // PASS = absent (expected)
+    cus_id_present:           STATUS.PASS,
     cus_id_value:             null,
     cus_id_cookie_name:       null,
     first_party_cookie_field: null,
     web_pixel_console:        STATUS.FAIL,
     web_pixel_console_status: null,
     shopify_consent:          null,
-    _pla_payload:             null,          // raw payload for Page Load API Integration type
+    _pla_payload:             null,
+    _pla_intrasite_click:     false,
   };
 
-  // ── PageLoad request ───────────────────────────────────────────────
   const ev = validPageloadEvents.find(e => e.pageloadRequest);
   if (ev) {
     result.pageload_found      = STATUS.PASS;
@@ -100,12 +118,12 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
     const payload = parsePageloadPayload(ev.requestBody || '');
     result.integration_source = payload.IntegrationSource || payload.integrationSource || null;
 
-    // Store raw payload for direct (non-Shopify) PLA — lifted to result.pla_payload by crawler
+    // Store raw payload and intrasite check for non-Shopify PLA calls
     if (result.integration_source !== 'Shopify') {
-      result._pla_payload = payload;
+      result._pla_payload         = payload;
+      result._pla_intrasite_click = detectIntrasiteClick(payload);
     }
 
-    // click_id
     const clickId = payload.ClickId || payload.clickid || null;
     if (clickId) {
       result.click_id_in_payload = STATUS.PASS;
@@ -114,7 +132,6 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
       result.click_id_cookies = cookieNamesFromMatches(findCookiesByValue(cookies, click_id));
     }
 
-    // cli (CustomProfileId) — value-first cookie scan
     const cpid = payload.CustomProfileId || payload.customprofileid || null;
     if (cpid !== undefined && cpid !== null) {
       if (cpid) {
@@ -129,7 +146,6 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
       result.cli_present = STATUS.NA;
     }
 
-    // cus_id — WARN if present
     const cid = payload.CustomerId || payload.customerid || null;
     if (cid) {
       const matches             = findCookiesByValue(cookies, cid);
@@ -143,14 +159,12 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
       : null;
   }
 
-  // ── Web pixel console ──────────────────────────────────────────────
   if (webPixelMessages.length > 0) {
     result.web_pixel_console        = STATUS.PASS;
     const okMsg                     = webPixelMessages.find(m => m.text.includes('200'));
     result.web_pixel_console_status = okMsg ? 200 : null;
   }
 
-  // ── Shopify consent API ────────────────────────────────────────────
   try {
     result.shopify_consent = await page.evaluate(() => {
       if (window.Shopify?.customerPrivacy?.userCanBeTracked) {

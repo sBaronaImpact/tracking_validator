@@ -16,7 +16,7 @@ function buildEndpoint(campaign_id, lookupValue, lookupType) {
 function determineLookupStrategy(result) {
   const type = result.integration_type;
 
-  if (type === INTEGRATION_TYPE.UTT || type === INTEGRATION_TYPE.HYBRID) {
+  if (type === INTEGRATION_TYPE.UTT || type === INTEGRATION_TYPE.HYBRID || type === INTEGRATION_TYPE.UTTPLAAPI) {
     const irPi      = result._raw?.ir_pi;
     const profileId = irPi?.value ? extractIrPiProfileId(irPi.value) : null;
     const cliValue  = result.utt?.cli_value || null;
@@ -143,7 +143,7 @@ class IdentityQueue {
 
   _naReason(result) {
     const type = result.integration_type;
-    if (type === INTEGRATION_TYPE.UTT || type === INTEGRATION_TYPE.HYBRID)
+    if (type === INTEGRATION_TYPE.UTT || type === INTEGRATION_TYPE.HYBRID || type === INTEGRATION_TYPE.UTTPLAAPI)
       return 'IR_PI cookie and CustomProfileId (CLI) not found — identity enrichment skipped';
     if (type === INTEGRATION_TYPE.SHOPIFY)
       return 'cli_value not found in PageLoad payload — identity enrichment skipped';

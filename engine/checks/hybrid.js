@@ -19,6 +19,9 @@ function detectIntegrationType(utt, shopify, clickIdCookieNames) {
   // UTT + Shopify signals → Hybrid
   if (hasUttTag && hasShopify) return INTEGRATION_TYPE.HYBRID;
 
+  // UTT + non-Shopify PLA running in parallel → UTT + Page Load API
+  if (hasUttTag && hasIdentify && hasDirectPageload) return INTEGRATION_TYPE.UTTPLAAPI;
+
   // UTT only
   if (hasUttTag && hasIdentify && !hasShopify) {
     const cookieName = utt.cli_cookie_name || '';
@@ -32,7 +35,7 @@ function detectIntegrationType(utt, shopify, clickIdCookieNames) {
   // Shopify Plugin only
   if (hasShopify && !hasUttTag) return INTEGRATION_TYPE.SHOPIFY;
 
-  // Direct (non-Shopify) Page Load API call
+  // Direct (non-Shopify) Page Load API only
   if (hasDirectPageload) return INTEGRATION_TYPE.PAGELOADAPI;
 
   // No UTT, no Shopify, but click ID stored as a cookie → ClickId Integration

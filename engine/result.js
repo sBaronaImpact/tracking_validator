@@ -15,6 +15,7 @@ const INTEGRATION_TYPE = {
   SHOPIFY:     'SHOPIFY',
   HYBRID:      'Potential Hybrid Integration',
   PAGELOADAPI: 'Page Load API Integration',
+  UTTPLAAPI:   'UTT + Page Load API',
   CLICKID:     'ClickId Integration',
   UNKNOWN:     'UNKNOWN',
 };
@@ -72,8 +73,8 @@ function createResult(input_url, campaign_id, click_id_param) {
     },
 
     // ── Page Load API ─────────────────────────────────────────────────────────
-    // Populated when a non-Shopify PLA call is detected (Page Load API Integration)
-    pla_payload: null,   // raw parsed payload object from the PLA request
+    pla_payload:        null,   // raw parsed payload object from the PLA request
+    pla_intrasite_click: false, // true when PageUrl and ReferringUrl share the same domain
 
     // ── Shopify ───────────────────────────────────────────────────────
     shopify: {

@@ -225,8 +225,28 @@ function computeRemediation(r) {
     return notes.join('\n\n');
   }
 
+  // UTT + Page Load API
+  if (type === 'UTT + Page Load API') {
+    notes.push(
+      'This client has both a UTT and Page Load API implementation running in parallel. They should opt into one tracking method to avoid potential issues with attribution and correlation. It\'s possible they are in the process of reintegrating from UTT to PLA — this can be verified via any relevant IE cases and/or CSM, otherwise, this should be verified through tracking efficacy, PLA logs, and testing.'
+    );
+    if (r.pla_intrasite_click) {
+      notes.push(
+        'The Page Load API call contains the same domain in the PageUrl and ReferringUrl parameters. impact will consider this an intrasite click and ignore it. The client must fix this and ensure that either the correct ReferringUrl value is passed, or an empty string if there is none.'
+      );
+    }
+    return notes.join('\n\n');
+  }
+
   // Page Load API Integration
   if (type === 'Page Load API Integration') {
+    if (r.pla_intrasite_click) {
+      // Intrasite click is a definitive fail for standalone PLA
+      notes.push(
+        'The Page Load API call contains the same domain in the PageUrl and ReferringUrl parameters. impact will consider this an intrasite click and ignore it. The client must fix this and ensure that either the correct ReferringUrl value is passed, or an empty string if there is none.'
+      );
+      return notes.join('\n\n');
+    }
     if (r.click_id_cookie_names) {
       notes.push(
         'This client is making a Page Load API call and stores the ClickId as a cookie. This is unusual behavior and the integration should be evaluated manually.\n\n' +
@@ -707,6 +727,7 @@ function filteredResults() {
     'SHOPIFY': 'SHOPIFY',
     'HYBRID':  'Potential Hybrid Integration',
     'PLA':     'Page Load API Integration',
+    'UTTPLAAPI': 'UTT + Page Load API',
     'CLICKID': 'ClickId Integration',
   };
   const q = (state.searchQuery || '').trim().toLowerCase();
@@ -725,7 +746,12 @@ function filteredResults() {
         if (r.integration_type !== 'UNKNOWN') return false;
       } else {
         const t = typeMap[state.filter];
-        if (r.integration_type !== t) return false;
+        // PLA tab catches both Page Load API Integration and UTT + Page Load API
+        if (state.filter === 'PLA') {
+          if (r.integration_type !== 'Page Load API Integration' && r.integration_type !== 'UTT + Page Load API') return false;
+        } else {
+          if (r.integration_type !== t) return false;
+        }
       }
     }
     if (q) {
@@ -1011,11 +1037,12 @@ function renderDrawer() {
     );
   }
 
-  // 4a. Page Load API Integration
-  if (r.integration_type === 'Page Load API Integration' && r.pla_payload) {
+  // 4a. Page Load API Integration / UTT + Page Load API
+  if ((r.integration_type === 'Page Load API Integration' || r.integration_type === 'UTT + Page Load API') && r.pla_payload) {
     const plaJson = JSON.stringify(r.pla_payload, null, 2);
     html += section('Page Load API',
       field('Pageload ms', r.shopify && r.shopify.time_to_pageload_ms) +
+      (r.pla_intrasite_click ? field('⚠ Intrasite Click', 'PageUrl and ReferringUrl share the same domain — impact will ignore this event') : '') +
       block('payload', plaJson, 'pla_payload'),
       'pla'
     );
@@ -1023,7 +1050,8 @@ function renderDrawer() {
 
   // 4b. Shopify — only show for SHOPIFY and HYBRID integration types
   if (r.shopify && r.shopify.pageload_found !== 'N/A' &&
-      r.integration_type !== 'Page Load API Integration') {
+      r.integration_type !== 'Page Load API Integration' &&
+      r.integration_type !== 'UTT + Page Load API') {
     const shopifyPayload = r.integration_type === 'SHOPIFY' && r.shopify.pageload_found === true
       ? (() => {
           // Reconstruct payload fields for display — only show if Shopify integration
@@ -1173,17 +1201,19 @@ function buildPlainText(r) {
     }
   }
 
-  // 4. Page Load API Integration
-  if (r.integration_type === 'Page Load API Integration' && r.pla_payload) {
+  // 4. Page Load API Integration / UTT + Page Load API
+  if ((r.integration_type === 'Page Load API Integration' || r.integration_type === 'UTT + Page Load API') && r.pla_payload) {
     lines.push('', '=== PAGE LOAD API ===');
     add('Pageload ms', r.shopify && r.shopify.time_to_pageload_ms);
+    if (r.pla_intrasite_click) add('⚠ Intrasite Click', 'PageUrl and ReferringUrl share the same domain — impact will ignore this event');
     lines.push('payload:');
     lines.push(JSON.stringify(r.pla_payload, null, 2));
   }
 
-  // 4b. Shopify — suppress for Page Load API Integration
+  // 4b. Shopify — suppress for PLA-type results
   if (r.shopify && r.shopify.pageload_found !== 'N/A' &&
-      r.integration_type !== 'Page Load API Integration') {
+      r.integration_type !== 'Page Load API Integration' &&
+      r.integration_type !== 'UTT + Page Load API') {
     lines.push('', '=== SHOPIFY ===');
     add('Pageload Call',          r.shopify.pageload_found);
     add('pageload_status',        r.shopify.pageload_status);
@@ -1245,7 +1275,7 @@ function updateCounts() {
   document.getElementById('count-utt').textContent     = rs.filter(r => r.integration_type === 'UTT').length;
   document.getElementById('count-shopify').textContent = rs.filter(r => r.integration_type === 'SHOPIFY').length;
   document.getElementById('count-hybrid').textContent  = rs.filter(r => r.integration_type === 'Potential Hybrid Integration').length;
-  document.getElementById('count-pla').textContent     = rs.filter(r => r.integration_type === 'Page Load API Integration').length;
+  document.getElementById('count-pla').textContent     = rs.filter(r => r.integration_type === 'Page Load API Integration' || r.integration_type === 'UTT + Page Load API').length;
   document.getElementById('count-clickid').textContent = rs.filter(r => r.integration_type === 'ClickId Integration').length;
   document.getElementById('count-unknown').textContent = rs.filter(r => r.integration_type === 'UNKNOWN').length;
   document.getElementById('count-issues').textContent  = rs.filter(r => {
@@ -1532,8 +1562,10 @@ const EXPORT_GROUPS = [
 function flattenResult(r, format) {
   const pretty = format !== 'sheets'; // CSV and default: pretty-print JSON; sheets: single-line
   const get = key => {
-    // Special: suppress Shopify fields for Page Load API Integration — data belongs in PLA section
-    if (key.startsWith('shopify.') && r.integration_type === 'Page Load API Integration') return 'N/A';
+    // Special: suppress Shopify fields for PLA-type results — data belongs in PLA section
+    if (key.startsWith('shopify.') &&
+        (r.integration_type === 'Page Load API Integration' ||
+         r.integration_type === 'UTT + Page Load API')) return 'N/A';
     // Special: tracking_link is the exported label for input_url
     if (key === 'tracking_link') return r.input_url || 'N/A';
     // Special: UTT identify payload JSON
