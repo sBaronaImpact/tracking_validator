@@ -106,6 +106,9 @@ async function runUttChecks(networkEvents, cookies, campaign_id, click_id, initi
   // ── Payload ────────────────────────────────────────────────────────
   const payload = parseFormData(ev.requestBody || '');
 
+  // Store the actual raw parsed payload so the drawer can display it verbatim
+  result.raw_payload = Object.keys(payload).length > 0 ? payload : null;
+
   // cli (customprofileid)
   const cpid = payload.customprofileid;
   if (cpid !== undefined) {

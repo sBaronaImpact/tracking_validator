@@ -118,7 +118,10 @@ async function runShopifyChecks(page, networkEvents, consoleMessages, cookies, c
     const payload = parsePageloadPayload(ev.requestBody || '');
     result.integration_source = payload.IntegrationSource || payload.integrationSource || null;
 
-    // Store raw payload and intrasite check for non-Shopify PLA calls
+    // Store actual raw payload for all integrations so the drawer can display it verbatim
+    result.raw_payload = Object.keys(payload).length > 0 ? payload : null;
+
+    // Store _pla_payload and intrasite check for non-Shopify PLA calls (used by result.js)
     if (result.integration_source !== 'Shopify') {
       result._pla_payload         = payload;
       result._pla_intrasite_click = detectIntrasiteClick(payload);

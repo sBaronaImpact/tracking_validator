@@ -59,6 +59,15 @@
         <h2 class="step-title">Campaign IDs</h2>
         <p class="step-instruction">Enter one or more campaign IDs. Separate multiple IDs with commas or new lines.</p>
       </div>
+
+      <div class="wt-mode-selector">
+        <div class="wt-mode-label">What are you testing?</div>
+        <div class="wt-mode-btns">
+          <button class="wt-mode-btn" data-mode="desktop" data-tip="Standard desktop crawl. Validates UTT, Shopify Plugin, PLA, and identity enrichment.">Desktop</button>
+          <button class="wt-mode-btn" data-mode="both" data-tip="Simulates iOS Safari and Android Chrome in parallel. Captures redirect chains and MMP handoff parameters for both platforms.">Mobile</button>
+        </div>
+      </div>
+
       <textarea
         id="wt-campaign-input"
         class="wt-textarea"
@@ -136,7 +145,7 @@
         <div class="parse-meta" id="wt-parse-meta"></div>
         <div class="parse-table-wrap">
           <table class="parse-table">
-            <thead>
+            <thead id="wt-parse-thead">
               <tr>
                 <th>campaign_id</th>
                 <th>campaign_name</th>
@@ -167,6 +176,15 @@
             <span class="config-label">Delay (ms)</span>
             <input class="config-input" id="wt-cfg-delay" type="number" min="0" max="10000" step="500" value="2000">
           </label>
+          <label class="config-field" data-tip="Simulate a mobile device to observe redirect behavior and tracking parameter propagation on iOS and Android. Select 'Both' to run iOS and Android in parallel for each URL.">
+            <span class="config-label">Device</span>
+            <select class="config-input config-select" id="wt-cfg-device" style="width:auto;text-align:left">
+              <option value="desktop" selected>Desktop</option>
+              <option value="ios">iOS</option>
+              <option value="android">Android</option>
+              <option value="both">Both</option>
+            </select>
+          </label>
         </div>
       </div>
       <div class="step-actions">
@@ -181,7 +199,7 @@
         <span class="step-banner-icon">⟳</span>
         <div class="step-banner-body">
           <div class="step-banner-title">Running checks</div>
-          <div class="step-banner-text">Once identity enrichment completes, the CSV will be automatically downloaded.</div>
+          <div class="step-banner-text" id="wt-step5-banner-text">Once identity enrichment completes, the CSV will be automatically downloaded.</div>
         </div>
         <div class="step-banner-actions">
           <button class="btn btn-sm btn-outline" id="wt-step5-stop-identity">⏹ Stop Identity</button>
@@ -263,7 +281,7 @@ MySQL table format:
       <div class="parse-meta" id="parse-meta"></div>
       <div class="parse-table-wrap">
         <table class="parse-table" id="parse-table">
-          <thead>
+          <thead id="parse-thead">
             <tr>
               <th>campaign_id</th>
               <th>campaign_name</th>
@@ -297,6 +315,15 @@ MySQL table format:
         <label class="config-field" data-tip="Milliseconds between URL batches (plus up to 1s random jitter) to avoid bot detection.">
           <span class="config-label">Delay (ms)</span>
           <input class="config-input" id="cfg-delay" type="number" min="0" max="10000" step="500" value="2000">
+        </label>
+        <label class="config-field" data-tip="Simulate a mobile device to observe redirect behavior and tracking parameter propagation on iOS and Android. Select 'Both' to run iOS and Android in parallel for each URL.">
+          <span class="config-label">Device</span>
+          <select class="config-input config-select" id="cfg-device" style="width:auto;text-align:left">
+            <option value="desktop" selected>Desktop</option>
+            <option value="ios">iOS</option>
+            <option value="android">Android</option>
+            <option value="both">Both</option>
+          </select>
         </label>
       </div>
 
@@ -345,6 +372,15 @@ MySQL table format:
           <button class="filter-tab" data-filter="CLICKID">ClickId <span class="tab-count" id="count-clickid">0</span></button>
           <button class="filter-tab" data-filter="unknown">Unknown <span class="tab-count" id="count-unknown">0</span></button>
           <button class="filter-tab" data-filter="issues">Issues <span class="tab-count" id="count-issues">0</span></button>
+          <div class="mobile-filter-pill" id="mobile-filter-pill" style="display:none">
+            <button class="filter-tab" data-filter="mobile" id="tab-mobile">Mobile <span class="tab-count" id="count-mobile">0</span></button>
+            <button class="mobile-sub-chevron" id="mobile-sub-chevron" title="Filter mobile results">▾</button>
+            <div class="mobile-sub-dropdown hidden" id="mobile-sub-dropdown">
+              <button class="mobile-sub-item active" data-subfilter="all">All <span id="count-mobile-all">0</span></button>
+              <button class="mobile-sub-item" data-subfilter="mmp">MMP <span id="count-mobile-mmp">0</span></button>
+              <button class="mobile-sub-item" data-subfilter="nonmmp">Non-MMP <span id="count-mobile-nonmmp">0</span></button>
+            </div>
+          </div>
         </div>
 
         <!-- Export -->
@@ -392,6 +428,9 @@ MySQL table format:
         <tbody id="results-tbody"></tbody>
       </table>
     </div>
+
+    <!-- Mobile results table — shown when Mobile filter tab is active -->
+    <div id="mobile-table-container" style="display:none;padding:8px"></div>
 
     <div class="results-empty hidden" id="results-empty">No results match the current filter.</div>
   </section>
@@ -570,7 +609,7 @@ MySQL table format:
       <span class="modal-title">Generate Input CSV</span>
       <button class="icon-btn" id="sql-modal-close">✕</button>
     </div>
-    <p class="modal-desc">Run this query in <code>r_ds_multiDb</code>, substituting <code>{campaign_id}</code> with your target program ID(s). Copy the result and paste into the Validator input.</p>
+    <p class="modal-desc">Run this query in <code>r_ds_multiDb</code>, substituting <code>{campaign_id}</code> with your target program ID(s). Copy the result and paste into the Validator input. The query shown reflects the currently selected device mode — switch to iOS/Android/Both in the input panel first to get the mobile variant.</p>
     <div class="code-block-wrap">
       <pre class="code-block" id="sql-code"></pre>
       <button class="copy-btn" id="sql-copy-btn">Copy</button>

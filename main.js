@@ -169,6 +169,33 @@ ipcMain.handle('crawl:cancel', () => {
   return { ok: true };
 });
 
+// ── Mobile crawl ───────────────────────────────────────────────────────────────
+let activeMobileCrawler = null;
+
+ipcMain.handle('mobile:start', async (_, { urls, config }) => {
+  if (activeMobileCrawler) return { error: 'Mobile crawl already running' };
+  if (activeCrawler)       return { error: 'Crawl already running' };
+
+  let MobileCrawler;
+  try { ({ MobileCrawler } = require('./engine/mobile-crawler')); }
+  catch (e) { return { error: e.message }; }
+
+  activeMobileCrawler = new MobileCrawler(
+    config,
+    msg    => mainWindow?.webContents.send('crawl:log',          msg),
+    result => mainWindow?.webContents.send('mobile:result',      sanitize(result)),
+    ()     => mainWindow?.webContents.send('mobile:done'),
+  );
+
+  activeMobileCrawler.run(urls).finally(() => { activeMobileCrawler = null; });
+  return { ok: true };
+});
+
+ipcMain.handle('mobile:cancel', () => {
+  if (activeMobileCrawler) activeMobileCrawler.cancel();
+  return { ok: true };
+});
+
 ipcMain.handle('identity:stop', () => {
   // Crawler must expose identityQueue (set in constructor as this.identityQueue).
   // Calling stop() drains the queue immediately — in-flight lookups self-terminate

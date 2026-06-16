@@ -27,6 +27,7 @@ const state = {
   campaignIds: [],             // step 1 output, used to populate step 2 SQL
   autoDownloaded: false,       // guard so step 6 only auto-downloads once per crawl
   identityStopped: false,      // true when user manually stops identity enrichment
+  testingMode: null,           // 'desktop'|'ios'|'android'|'both' — set in walkthrough step 1
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -386,9 +387,81 @@ join irad.irad_ad ad on ad.ircm_campaign_id = ti.ircm_campaign_id
 where
   ti.ircm_campaign_id in ({campaign_id})`;
 
-// ══════════════════════════════════════════════════════════════════════════════
-// INPUT PARSING
-// ══════════════════════════════════════════════════════════════════════════════
+const SQL_QUERY_MOBILE = `select
+  lower(concat("https://",IF(tracking_domain_type="CUSTOM",
+    tracking_domain,
+    concat(sub_tracking_domain,".",tracking_domain)),
+    "/c/2222/",ad.id,"/",c.id)) URL
+  ,COALESCE(
+    IF(LOCATE('={clickid}', campaign_tracking_template) > 0,
+      SUBSTRING_INDEX(SUBSTRING_INDEX(campaign_tracking_template, '={clickid}', 1), '&', -1), NULL),
+    IF(LOCATE('={clickid}', global_url_params) > 0,
+      SUBSTRING_INDEX(SUBSTRING_INDEX(global_url_params, '={clickid}', 1), '&', -1), NULL)
+  ) as clickid_param
+  ,IF(LOCATE('={clickid}',
+      CASE
+        WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].mobileOS')) = 'ANDROID'
+          THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].landingPageUrl'))
+        WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].mobileOS')) = 'ANDROID'
+          THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].landingPageUrl'))
+        ELSE NULL
+      END) > 0,
+    SUBSTRING_INDEX(
+      SUBSTRING_INDEX(
+        SUBSTRING_INDEX(
+          CASE
+            WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].mobileOS')) = 'ANDROID'
+              THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].landingPageUrl'))
+            WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].mobileOS')) = 'ANDROID'
+              THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].landingPageUrl'))
+            ELSE NULL
+          END,
+          '?', -1
+        ),
+        '={clickid}', 1
+      ),
+      '&', -1
+    ),
+    NULL) as android_clickid_param
+  ,IF(LOCATE('={clickid}',
+      CASE
+        WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].mobileOS')) = 'IOS'
+          THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].landingPageUrl'))
+        WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].mobileOS')) = 'IOS'
+          THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].landingPageUrl'))
+        ELSE NULL
+      END) > 0,
+    SUBSTRING_INDEX(
+      SUBSTRING_INDEX(
+        SUBSTRING_INDEX(
+          CASE
+            WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].mobileOS')) = 'IOS'
+              THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[0].landingPageUrl'))
+            WHEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].mobileOS')) = 'IOS'
+              THEN JSON_UNQUOTE(JSON_EXTRACT(mobile_app_landingpages, '$[1].landingPageUrl'))
+            ELSE NULL
+          END,
+          '?', -1
+        ),
+        '={clickid}', 1
+      ),
+      '&', -1
+    ),
+    NULL) as ios_clickid_param
+  ,c.id as campaign_id
+  ,c.name as campaign_name
+from ircm.ircm_technicalintegration ti
+join ircm.ircm_campaign c on c.id = ti.ircm_campaign_id
+join irad.irad_ad ad on ad.ircm_campaign_id = ti.ircm_campaign_id
+  and ad_type = "ONLINE_TRACKING_LINK"
+where
+  ti.ircm_campaign_id in ({campaign_id})`;
+
+function getActiveSql() {
+  return (state.testingMode && state.testingMode !== 'desktop')
+    ? SQL_QUERY_MOBILE
+    : SQL_QUERY;
+}
 
 function parseInput(text) {
   if (!text || !text.trim()) return { urls: [], error: null };
@@ -407,48 +480,56 @@ function parseMysqlTable(lines) {
   const parseRow = line => line.split('|').slice(1, -1).map(c => c.trim());
   const headers  = parseRow(dataLines[0]).map(h => h.toLowerCase());
 
-  const urlIdx   = headers.findIndex(h => h === 'url');
-  const cidIdx   = headers.findIndex(h => h === 'clickid_param');
-  const campIdx  = headers.findIndex(h => h === 'campaign_id');
-  const nameIdx  = headers.findIndex(h => h === 'campaign_name');
+  const urlIdx      = headers.findIndex(h => h === 'url');
+  const cidIdx      = headers.findIndex(h => h === 'clickid_param');
+  const campIdx     = headers.findIndex(h => h === 'campaign_id');
+  const nameIdx     = headers.findIndex(h => h === 'campaign_name');
+  const androidIdx  = headers.findIndex(h => h === 'android_clickid_param');
+  const iosIdx      = headers.findIndex(h => h === 'ios_clickid_param');
 
   if (urlIdx < 0) return { urls: [], error: 'Missing URL column in MySQL table' };
 
   const urls = dataLines.slice(1).map(line => {
     const cells = parseRow(line);
     return {
-      url:          cells[urlIdx]  || '',
-      clickIdParam: cidIdx  >= 0 ? cells[cidIdx]  || 'irclickid' : 'irclickid',
-      campaignId:   campIdx >= 0 ? cells[campIdx] || '' : '',
-      campaignName: nameIdx >= 0 ? cells[nameIdx] || '' : '',
+      url:                  cells[urlIdx]      || '',
+      clickIdParam:         cidIdx      >= 0 ? cells[cidIdx]      || 'irclickid' : 'irclickid',
+      campaignId:           campIdx     >= 0 ? cells[campIdx]     || '' : '',
+      campaignName:         nameIdx     >= 0 ? cells[nameIdx]     || '' : '',
+      androidClickIdParam:  androidIdx  >= 0 ? cells[androidIdx]  || null : null,
+      iosClickIdParam:      iosIdx      >= 0 ? cells[iosIdx]      || null : null,
     };
   }).filter(r => r.url.startsWith('http'));
 
   if (!urls.length) return { urls: [], error: 'No valid URLs found in MySQL table' };
-  return { urls, error: null };
+  return { urls, error: null, hasMobileColumns: androidIdx >= 0 && iosIdx >= 0 };
 }
 
 function parseCsv(lines) {
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-  const urlIdx  = headers.findIndex(h => h === 'url');
-  const cidIdx  = headers.findIndex(h => h === 'clickid_param');
-  const campIdx = headers.findIndex(h => h === 'campaign_id');
-  const nameIdx = headers.findIndex(h => h === 'campaign_name');
+  const headers    = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const urlIdx     = headers.findIndex(h => h === 'url');
+  const cidIdx     = headers.findIndex(h => h === 'clickid_param');
+  const campIdx    = headers.findIndex(h => h === 'campaign_id');
+  const nameIdx    = headers.findIndex(h => h === 'campaign_name');
+  const androidIdx = headers.findIndex(h => h === 'android_clickid_param');
+  const iosIdx     = headers.findIndex(h => h === 'ios_clickid_param');
 
   if (urlIdx < 0) return { urls: [], error: 'Missing URL column. Expected CSV header: URL,clickid_param,campaign_id,campaign_name' };
 
   const urls = lines.slice(1).map(line => {
     const cells = splitCsvLine(line);
     return {
-      url:          cells[urlIdx]  || '',
-      clickIdParam: cidIdx  >= 0 ? cells[cidIdx]  || 'irclickid' : 'irclickid',
-      campaignId:   campIdx >= 0 ? cells[campIdx] || '' : '',
-      campaignName: nameIdx >= 0 ? cells[nameIdx] || '' : '',
+      url:                  cells[urlIdx]      || '',
+      clickIdParam:         cidIdx      >= 0 ? cells[cidIdx]      || 'irclickid' : 'irclickid',
+      campaignId:           campIdx     >= 0 ? cells[campIdx]     || '' : '',
+      campaignName:         nameIdx     >= 0 ? cells[nameIdx]     || '' : '',
+      androidClickIdParam:  androidIdx  >= 0 ? cells[androidIdx]  || null : null,
+      iosClickIdParam:      iosIdx      >= 0 ? cells[iosIdx]      || null : null,
     };
   }).filter(r => r.url.startsWith('http'));
 
   if (!urls.length) return { urls: [], error: 'No valid URLs found. Make sure URLs start with http.' };
-  return { urls, error: null };
+  return { urls, error: null, hasMobileColumns: androidIdx >= 0 && iosIdx >= 0 };
 }
 
 function splitCsvLine(line) {
@@ -776,7 +857,10 @@ function renderTable() {
   const empty    = document.getElementById('results-empty');
 
   if (!filtered.length) {
-    empty.classList.remove('hidden');
+    // Don't show desktop empty state when mobile tab is active
+    if (state.filter !== 'mobile') {
+      empty.classList.remove('hidden');
+    }
     thead.innerHTML = '';
     tbody.innerHTML = '';
     renderTable._lastGroupKey = '';
@@ -900,6 +984,13 @@ function renderDrawer() {
   const overlay = document.getElementById('drawer-overlay');
   if (!r) { closeDetail(); return; }
 
+  // Restore the expand button to desktop behavior (mobile drawer may have overridden it)
+  const expandBtn = document.getElementById('drawer-expand');
+  if (expandBtn && expandBtn.onclick) {
+    expandBtn.onclick = null;
+    expandBtn.textContent = state.drawerWide ? '⇥ Shrink' : '⇤ Expand';
+  }
+
   const naSpan = '<span class="dv-na">N/A</span>';
 
   const field = (label, val) => {
@@ -1003,15 +1094,12 @@ function renderDrawer() {
 
   // 3. Universal Tracking Tag
   if (r.utt && r.utt.tag_detected !== 'N/A') {
-    // Reconstruct identify payload from available UTT fields
+    // Use actual captured identify payload from network request — never reconstruct
     const uttPayload = (() => {
       if (r.utt.identify_call !== true) return null;
-      const p = {};
-      if (r.utt.cli_value)      p.customProfileId = r.utt.cli_value;
-      if (r.utt.cus_id_value)   p.customerId      = r.utt.cus_id_value;
-      if (r.utt.click_id_in_payload === true && r.click_id) p.clickId = r.click_id;
-      if (r.utt.ir_field)       p.irField         = r.utt.ir_field;
-      return Object.keys(p).length > 0 ? JSON.stringify(p, null, 2) : null;
+      if (r.utt.raw_payload && Object.keys(r.utt.raw_payload).length > 0)
+        return JSON.stringify(r.utt.raw_payload, null, 2);
+      return null;
     })();
     if (uttPayload) copyValues['utt_payload'] = uttPayload;
 
@@ -1052,18 +1140,8 @@ function renderDrawer() {
   if (r.shopify && r.shopify.pageload_found !== 'N/A' &&
       r.integration_type !== 'Page Load API Integration' &&
       r.integration_type !== 'UTT + Page Load API') {
-    const shopifyPayload = r.integration_type === 'SHOPIFY' && r.shopify.pageload_found === true
-      ? (() => {
-          // Reconstruct payload fields for display — only show if Shopify integration
-          const p = {};
-          if (r.shopify.integration_source)       p.IntegrationSource  = r.shopify.integration_source;
-          if (r.shopify.cli_value)                p.CustomProfileId    = r.shopify.cli_value;
-          if (r.shopify.cus_id_value)             p.CustomerId         = r.shopify.cus_id_value;
-          if (r.shopify.first_party_cookie_field !== null && r.shopify.first_party_cookie_field !== undefined)
-                                                  p.FirstPartyCookie   = r.shopify.first_party_cookie_field;
-          if (r.shopify.click_id_in_payload === true) p.ClickId = r.click_id;
-          return Object.keys(p).length > 0 ? JSON.stringify(p, null, 2) : null;
-        })()
+    const shopifyPayload = r.shopify.raw_payload && Object.keys(r.shopify.raw_payload).length > 0
+      ? JSON.stringify(r.shopify.raw_payload, null, 2)
       : null;
     html += section('Shopify',
       bool ('Pageload Call',          r.shopify.pageload_found) +
@@ -1187,17 +1265,10 @@ function buildPlainText(r) {
     add('Method',                 r.utt.implementation_method);
     add('UTT Library ms',         r.utt.time_to_tag_ms);
     add('Identify ms',            r.utt.time_to_identify_ms);
-    // Identify payload JSON
-    if (r.utt.identify_call === true) {
-      const p = {};
-      if (r.utt.cli_value)                              p.customProfileId = r.utt.cli_value;
-      if (r.utt.cus_id_value)                           p.customerId      = r.utt.cus_id_value;
-      if (r.utt.click_id_in_payload === true && r.click_id) p.clickId     = r.click_id;
-      if (r.utt.ir_field)                               p.irField         = r.utt.ir_field;
-      if (Object.keys(p).length > 0) {
-        lines.push('identify_payload:');
-        lines.push(JSON.stringify(p, null, 2));
-      }
+    // Identify payload — actual captured network request body, never reconstructed
+    if (r.utt.identify_call === true && r.utt.raw_payload && Object.keys(r.utt.raw_payload).length > 0) {
+      lines.push('identify_payload:');
+      lines.push(JSON.stringify(r.utt.raw_payload, null, 2));
     }
   }
 
@@ -1226,16 +1297,10 @@ function buildPlainText(r) {
     add('CustomerId',             r.shopify.cus_id_present);
     add('Web Pixel',              r.shopify.web_pixel_console);
     add('Consent API',            r.shopify.shopify_consent);
-    // Shopify payload JSON
-    const sp = {};
-    if (r.shopify.integration_source)  sp.IntegrationSource = r.shopify.integration_source;
-    if (r.shopify.cli_value)           sp.CustomProfileId   = r.shopify.cli_value;
-    if (r.shopify.cus_id_value)        sp.CustomerId        = r.shopify.cus_id_value;
-    if (r.shopify.first_party_cookie_field != null) sp.FirstPartyCookie = r.shopify.first_party_cookie_field;
-    if (r.shopify.click_id_in_payload === true) sp.ClickId = r.click_id;
-    if (Object.keys(sp).length > 0) {
+    // Shopify payload — actual captured network request body, never reconstructed
+    if (r.shopify.raw_payload && Object.keys(r.shopify.raw_payload).length > 0) {
       lines.push('payload:');
-      lines.push(JSON.stringify(sp, null, 2));
+      lines.push(JSON.stringify(r.shopify.raw_payload, null, 2));
     }
   }
 
@@ -1284,7 +1349,26 @@ function updateCounts() {
     return isHardIssue || isSkipIssue;
   }).length;
 
-  // Enable Re-run Issues only when there are issues AND a crawl isn't running
+  // Mobile count
+  const mobileCount = (state.mobileResults || []).length;
+  document.getElementById('count-mobile').textContent = mobileCount;
+  // Mobile sub-filter counts
+  const isMmpDevice = d => d && (
+    d.mmp_detected ||
+    d.terminal_type === 'app-store-ios' ||
+    d.terminal_type === 'app-store-android' ||
+    d.terminal_type === 'mmp-link' ||
+    d.terminal_type === 'mmp-interstitial' ||
+    d.terminal_type === 'custom-scheme'
+  );
+  const mmpCount    = (state.mobileResults || []).filter(r => isMmpDevice(r.ios) || isMmpDevice(r.android)).length;
+  const nonMmpCount = (state.mobileResults || []).filter(r => !isMmpDevice(r.ios) && !isMmpDevice(r.android)).length;
+  const mobileSubAll    = document.getElementById('count-mobile-all');
+  const mobileSubMmp    = document.getElementById('count-mobile-mmp');
+  const mobileSubNonMmp = document.getElementById('count-mobile-nonmmp');
+  if (mobileSubAll)    mobileSubAll.textContent    = mobileCount;
+  if (mobileSubMmp)    mobileSubMmp.textContent    = mmpCount;
+  if (mobileSubNonMmp) mobileSubNonMmp.textContent = nonMmpCount;
   const issueCount = getRerunCandidates().length;
   const rerunBtn = document.getElementById('rerun-issues-btn');
   if (rerunBtn) {
@@ -1369,6 +1453,21 @@ function resetAll() {
   document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
   const allTab = document.querySelector('.filter-tab[data-filter="all"]');
   if (allTab) allTab.classList.add('active');
+
+  // Hide mobile pill + reset sub-filter
+  state.mobileResults   = [];
+  state.mobileSubFilter = 'all';
+  const mobilePill     = document.getElementById('mobile-filter-pill');
+  const mobileSubChev  = document.getElementById('mobile-sub-chevron');
+  const mobileSubDrop  = document.getElementById('mobile-sub-dropdown');
+  if (mobilePill)    mobilePill.style.display = 'none';
+  if (mobileSubChev) mobileSubChev.textContent = '▾';
+  if (mobileSubDrop) {
+    mobileSubDrop.classList.add('hidden');
+    mobileSubDrop.querySelectorAll('.mobile-sub-item').forEach(b => b.classList.remove('active'));
+    const allItem = mobileSubDrop.querySelector('[data-subfilter="all"]');
+    if (allItem) allItem.classList.add('active');
+  }
 
   // Hide results panel, hide drawer
   document.getElementById('panel-results').classList.add('hidden');
@@ -1466,10 +1565,34 @@ function updatePreview(text) {
   const paramSummary = Object.entries(params).map(([k, v]) => `${v} ${k}`).join(' · ');
   metaEl.textContent = `${urls.length} URL${urls.length > 1 ? 's' : ''} detected · ${paramSummary}`;
 
+  const isValidParam = p => p && /^[a-zA-Z0-9_~\-]{1,64}$/.test(p);
+  const hasMobile = urls.some(u => isValidParam(u.iosClickIdParam) || isValidParam(u.androidClickIdParam));
+
+  // Update thead
+  const thead = document.querySelector('#parse-thead tr');
+  if (thead) {
+    document.querySelectorAll('#parse-thead tr .mobile-col').forEach(th => th.remove());
+    if (hasMobile) {
+      ['ios_clickid_param', 'android_clickid_param'].forEach(label => {
+        const th = document.createElement('th');
+        th.className = 'mobile-col';
+        th.textContent = label;
+        thead.appendChild(th);
+      });
+    }
+  }
+
   // Table rows
-  tbodyEl.innerHTML = urls.slice(0, 20).map(u =>
-    `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.campaignName || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td></tr>`
-  ).join('') + (urls.length > 20 ? `<tr><td colspan="4" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
+  const colCount = hasMobile ? 6 : 4;
+  tbodyEl.innerHTML = urls.slice(0, 20).map(u => {
+    let row = `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.campaignName || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td>`;
+    if (hasMobile) {
+      row += `<td>${isValidParam(u.iosClickIdParam) ? esc(u.iosClickIdParam) : '<span style="color:var(--text-muted)">—</span>'}</td>`;
+      row += `<td>${isValidParam(u.androidClickIdParam) ? esc(u.androidClickIdParam) : '<span style="color:var(--text-muted)">—</span>'}</td>`;
+    }
+    row += '</tr>';
+    return row;
+  }).join('') + (urls.length > 20 ? `<tr><td colspan="${colCount}" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
 
   preview.classList.remove('hidden');
 }
@@ -1571,12 +1694,8 @@ function flattenResult(r, format) {
     // Special: UTT identify payload JSON
     if (key === 'utt.identify_payload') {
       if (!r.utt || r.utt.identify_call !== true) return 'N/A';
-      const p = {};
-      if (r.utt.cli_value)                          p.customProfileId = r.utt.cli_value;
-      if (r.utt.cus_id_value)                       p.customerId      = r.utt.cus_id_value;
-      if (r.utt.click_id_in_payload === true && r.click_id) p.clickId = r.click_id;
-      if (r.utt.ir_field)                           p.irField         = r.utt.ir_field;
-      return Object.keys(p).length > 0
+      const p = r.utt.raw_payload;
+      return p && Object.keys(p).length > 0
         ? (pretty ? JSON.stringify(p, null, 2) : JSON.stringify(p))
         : 'N/A';
     }
@@ -1586,17 +1705,11 @@ function flattenResult(r, format) {
         ? (pretty ? JSON.stringify(r.pla_payload, null, 2) : JSON.stringify(r.pla_payload))
         : 'N/A';
     }
-    // Special: Shopify payload JSON — pretty for CSV, single-line for Sheets
+    // Special: Shopify payload JSON — actual raw payload, never reconstructed
     if (key === 'shopify._payload_json') {
       if (!r.shopify || r.shopify.pageload_found !== true) return 'N/A';
-      const p = {};
-      if (r.shopify.integration_source)  p.IntegrationSource = r.shopify.integration_source;
-      if (r.shopify.cli_value)           p.CustomProfileId   = r.shopify.cli_value;
-      if (r.shopify.cus_id_value)        p.CustomerId        = r.shopify.cus_id_value;
-      if (r.shopify.first_party_cookie_field !== null && r.shopify.first_party_cookie_field !== undefined)
-                                         p.FirstPartyCookie  = r.shopify.first_party_cookie_field;
-      if (r.shopify.click_id_in_payload === true) p.ClickId = r.click_id;
-      return Object.keys(p).length > 0
+      const p = r.shopify.raw_payload;
+      return p && Object.keys(p).length > 0
         ? (pretty ? JSON.stringify(p, null, 2) : JSON.stringify(p))
         : 'N/A';
     }
@@ -1684,6 +1797,7 @@ function readConfig() {
     waitTime:      parseInt(document.getElementById('cfg-wait').value)        || 20000,
     retryCount:    parseInt(document.getElementById('cfg-retries').value)     || 1,
     interUrlDelay: parseInt(document.getElementById('cfg-delay').value)       || 2000,
+    device:        document.getElementById('cfg-device')?.value              || 'desktop',
   };
 }
 
@@ -1695,35 +1809,91 @@ function saveConfigNow() {
 // CRAWL
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Mobile results state
+state.mobileResults = [];
+
+// Register mobile result/done handlers once
+window.api.onMobileResult(result => {
+  state.mobileResults.push(result);
+  updateCounts();
+  renderMobileTable();
+});
+
+window.api.onMobileDone(() => {
+  finishCrawl();
+  // Mobile has no identity enrichment — advance walkthrough immediately
+  if (state.mode === 'walkthrough' && state.guidedStep === 5) {
+    goToStep(6);
+    if (!state.autoDownloaded) {
+      state.autoDownloaded = true;
+      setTimeout(() => {
+        exportMobileCsv();
+        const msg = document.getElementById('wt-step6-message');
+        if (msg) msg.textContent = 'CSV downloaded.';
+      }, 300);
+    }
+  }
+});
+
 async function startCrawl() {
   if (!state.parsed.length) return;
+  const cfg = readConfig();
+  const device = cfg.device || 'desktop';
+
   state.running = true;
-  state.results = [];
   state.detailId = null;
-  document.body.classList.add('is-running');    // suppresses heavy animations during crawl
+  document.body.classList.add('is-running');
 
   document.getElementById('run-btn').classList.add('hidden');
   document.getElementById('cancel-btn').classList.remove('hidden');
   document.getElementById('panel-results').classList.remove('hidden');
   document.getElementById('terminal-status').textContent = 'Running…';
 
-  updateCounts();
-  renderTable();
-  saveConfigNow();
-
   const urls = state.parsed.map(p => ({
-    url:          p.url,
-    campaignId:   p.campaignId,
-    campaignName: p.campaignName,
-    clickIdParam: p.clickIdParam,
+    url:                   p.url,
+    campaignId:            p.campaignId,
+    campaignName:          p.campaignName,
+    clickIdParam:          p.clickIdParam,
+    iosClickIdParam:       p.iosClickIdParam    || null,
+    androidClickIdParam:   p.androidClickIdParam || null,
   }));
 
-  try {
-    const res = await window.api.startCrawl(urls, readConfig());
-    if (res.error) { logLine('✖ Error: ' + res.error); finishCrawl(); }
-  } catch (e) {
-    logLine('✖ Fatal: ' + e.message);
-    finishCrawl();
+  if (device === 'desktop') {
+    // Normal desktop crawl
+    state.results = [];
+    updateCounts();
+    renderTable();
+    saveConfigNow();
+
+    try {
+      const res = await window.api.startCrawl(urls, cfg);
+      if (res.error) { logLine('✖ Error: ' + res.error); finishCrawl(); }
+    } catch (e) {
+      logLine('✖ Fatal: ' + e.message);
+      finishCrawl();
+    }
+  } else {
+    // Mobile crawl
+    state.mobileResults = [];
+    const devices = device === 'both' ? ['ios', 'android'] : [device];
+
+    // Show Mobile filter pill + activate the tab
+    const mobilePill = document.getElementById('mobile-filter-pill');
+    const mobileTab  = document.getElementById('tab-mobile');
+    if (mobilePill) mobilePill.style.display = '';
+    if (mobileTab)  mobileTab.click(); // switch to mobile tab
+
+    updateCounts();
+    renderMobileTable();
+    saveConfigNow();
+
+    try {
+      const res = await window.api.startMobileCrawl(urls, { devices });
+      if (res.error) { logLine('✖ Error: ' + res.error); finishCrawl(); }
+    } catch (e) {
+      logLine('✖ Fatal: ' + e.message);
+      finishCrawl();
+    }
   }
 }
 
@@ -1760,6 +1930,669 @@ function renderTableDebounced() {
     renderTable();                       // trailing paint after burst settles
   }, 80);
 }
+// ── Mobile URL param parser (used in drawer) ───────────────────────────────────
+function parseUrlParams(urlString, includeBase) {
+  if (!urlString) return null;
+  try {
+    const url    = new URL(urlString);
+    const params = {};
+    if (includeBase) params._baseUrl = url.origin + url.pathname;
+    for (const [k, v] of url.searchParams.entries()) params[k] = v;
+    return Object.keys(params).length > (includeBase ? 1 : 0) ? params : null;
+  } catch { return null; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MOBILE TABLE, DRAWER & EXPORT
+// ══════════════════════════════════════════════════════════════════════════════
+
+function terminalBadge(type) {
+  const labels = {
+    'app-store-ios':     'App Store iOS',
+    'app-store-android': 'App Store Android',
+    'mobile-web':        'Mobile Web',
+    'mmp-link':          'MMP Link',
+    'mmp-interstitial':  'MMP Interstitial',
+    'no-redirect':       'No Redirect',
+    'custom-scheme':     'Custom Scheme',
+    'unknown':           'Unknown',
+  };
+  return `<span class="terminal-badge ${type}">${labels[type] || type}</span>`;
+}
+
+function hopTypeBadge(type) {
+  return `<span class="mobile-hop-type ${type}">${type}</span>`;
+}
+
+// Generate summary notes for a mobile device result — returns array, caller picks separator
+// ── Mobile status computation ─────────────────────────────────────────────────
+function computeMobileStatus(d) {
+  if (!d) return null;  // device not crawled — not a SKIP, just absent
+  // No redirect — tracking link never left the impact domain
+  if (d.terminal_type === 'no-redirect') return 'SKIP';
+  const hasMmpOrStore = d.mmp_detected ||
+                        d.terminal_type === 'app-store-ios' ||
+                        d.terminal_type === 'app-store-android' ||
+                        d.terminal_type === 'mmp-link' ||
+                        d.terminal_type === 'mmp-interstitial' ||
+                        d.terminal_type === 'custom-scheme';
+  const hasMobileWeb  = d.terminal_type === 'mobile-web';
+  const hasClickId    = !!d.click_id;
+  // PASS: handoff or mobile-web landing + click ID present
+  if (hasClickId && (hasMmpOrStore || hasMobileWeb)) return 'PASS';
+  // WARN: handoff detected but no click ID
+  if (!hasClickId && hasMmpOrStore) return 'WARN';
+  // FAIL: no handoff, no mobile-web, regardless of click ID
+  if (!hasMmpOrStore && !hasMobileWeb) return 'FAIL';
+  // mobile-web but no click ID
+  if (hasMobileWeb && !hasClickId) return 'WARN';
+  return 'PASS';
+}
+
+// ── Crawl notes — what the crawler observed, factual ─────────────────────────
+function buildMobileCrawlNotes(d) {
+  if (!d) return [];
+  const notes = [];
+  if (d.terminal_type === 'app-store-ios')     notes.push('Redirected to App Store (iOS)');
+  if (d.terminal_type === 'app-store-android') notes.push('Redirected to Play Store (Android)');
+  if (d.terminal_type === 'mmp-link')          notes.push('Crawler reached the MMP handoff URL but could not follow through to the final destination — tool limitation. Manual testing on a real device is required to verify the end result.');
+  if (d.terminal_type === 'no-redirect')       notes.push('The tracking link did not redirect beyond the impact domain.');
+  if (d.terminal_type === 'custom-scheme')     notes.push('Custom URL scheme detected — app handoff.');
+  if (d.mmp_detected === 'Button') notes.push('Button (r.bttn.io) network integration detected — click ID is passed through Button to the destination.');
+  else if (d.mmp_detected)        notes.push(`${d.mmp_detected} MMP handoff detected.`);
+  if (d.error && d.error.toLowerCase().includes('captcha')) notes.push(`CAPTCHA blocked crawl: ${d.error}`);
+  else if (d.error)                            notes.push(`Crawl error: ${d.error}`);
+  return notes;
+}
+
+// ── Remediation notes — what the TSE should act on ───────────────────────────
+function buildMobileRemediationNotes(d) {
+  if (!d) return [];
+  const notes = [];
+  if (!d.click_id && (d.mmp_detected || d.terminal_type === 'app-store-ios' || d.terminal_type === 'app-store-android' || d.terminal_type === 'mmp-link'))
+    notes.push('Click ID not passed through MMP handoff — verify the tracking link is configured with the correct click ID parameter.');
+  if (!d.click_id && !d.mmp_detected && d.terminal_type !== 'no-redirect' && d.terminal_type !== 'app-store-ios' && d.terminal_type !== 'app-store-android')
+    notes.push('Click ID not detected — verify the tracking link is configured with the correct click ID parameter.');
+  if (d.terminal_type === 'no-redirect')
+    notes.push('Mobile redirect may not be configured for this program, or a real device is required to trigger it. Verify mobile redirect settings in the platform.');
+  return notes;
+}
+
+// Legacy combined — used by table Notes column and CSV
+function buildMobileNotes(d) {
+  return [...buildMobileRemediationNotes(d), ...buildMobileCrawlNotes(d)];
+}
+
+// For table UI — line breaks between notes
+function buildMobileNoteHtml(d) {
+  return buildMobileNotes(d).join('<br>');
+}
+
+// For CSV — newline between notes
+function buildMobileNoteText(d) {
+  return buildMobileNotes(d).join('\n');
+}
+
+function renderMobileTable() {
+  const wrap = document.getElementById('mobile-table-container');
+  if (!wrap) return;
+
+  // Always hide the desktop "no results" message when mobile tab is active
+  const emptyEl = document.getElementById('results-empty');
+  if (emptyEl) emptyEl.classList.add('hidden');
+
+  const results = state.mobileResults || [];
+
+  // Apply sub-filter and search
+  const subFilter  = state.mobileSubFilter || 'all';
+  const searchTerm = (document.getElementById('results-search')?.value || '').toLowerCase().trim();
+
+  const isMmpDevice = d => d && (
+    d.mmp_detected ||
+    d.terminal_type === 'app-store-ios' ||
+    d.terminal_type === 'app-store-android' ||
+    d.terminal_type === 'mmp-link' ||
+    d.terminal_type === 'mmp-interstitial' ||
+    d.terminal_type === 'custom-scheme'
+  );
+
+  const filtered = results.filter(r => {
+    if (subFilter === 'mmp') {
+      if (!isMmpDevice(r.ios) && !isMmpDevice(r.android)) return false;
+    } else if (subFilter === 'nonmmp') {
+      if (isMmpDevice(r.ios) || isMmpDevice(r.android)) return false;
+    }
+    // Search
+    if (searchTerm) {
+      const hay = [r.url, r.campaign_id, r.campaign_name,
+                   r.ios?.click_id, r.android?.click_id,
+                   r.ios?.mmp_detected, r.android?.mmp_detected].filter(Boolean).join(' ').toLowerCase();
+      if (!hay.includes(searchTerm)) return false;
+    }
+    return true;
+  });
+
+  if (!filtered.length) {
+    wrap.innerHTML = `<div style="padding:24px;color:var(--text-muted);font-size:12px">${results.length ? 'No results match the current filter.' : 'No mobile results yet.'}</div>`;
+    return;
+  }
+
+  const hasIos     = filtered.some(r => r.ios);
+  const hasAndroid = filtered.some(r => r.android);
+
+  let html = '<div class="mobile-table-wrap"><table class="mobile-table"><thead><tr>';
+  html += '<th data-tip="Campaign ID from the SQL query">Campaign ID</th>';
+  html += '<th data-tip="Campaign name from the SQL query">Campaign</th>';
+  html += '<th data-tip="The impact tracking link that was crawled">Tracking Link</th>';
+
+  if (hasIos) {
+    html += '<th class="device-header-ios group-start-ios" data-tip="Pass/Fail/Warn/Skip status for this iOS crawl">iOS Status</th>';
+    html += '<th class="device-header-ios" data-tip="MMP or integration detected in the redirect chain">iOS MMP</th>';
+    html += '<th class="device-header-ios" data-tip="Where the iOS redirect chain terminated">iOS Destination</th>';
+    html += '<th class="device-header-ios" data-tip="Click ID extracted from the redirect chain">iOS Click ID</th>';
+    html += '<th class="device-header-ios" data-tip="Crawl observations and recommended actions">iOS Notes</th>';
+  }
+  if (hasAndroid) {
+    html += '<th class="device-header-android group-start-android" data-tip="Pass/Fail/Warn/Skip status for this Android crawl">Android Status</th>';
+    html += '<th class="device-header-android" data-tip="MMP or integration detected in the redirect chain">Android MMP</th>';
+    html += '<th class="device-header-android" data-tip="Where the Android redirect chain terminated">Android Destination</th>';
+    html += '<th class="device-header-android" data-tip="Click ID extracted from the redirect chain">Android Click ID</th>';
+    html += '<th class="device-header-android" data-tip="Crawl observations and recommended actions">Android Notes</th>';
+  }
+  html += '</tr></thead><tbody>';
+
+  filtered.forEach((r, idx) => {
+    const realIdx = results.indexOf(r);
+    html += `<tr class="mobile-row" data-idx="${realIdx}" style="cursor:pointer">`;
+    html += `<td><span style="font-size:10px;color:var(--text-muted)">${esc(r.campaign_id || '—')}</span></td>`;
+    html += `<td>${esc(r.campaign_name || '—')}</td>`;
+    html += `<td><span style="font-size:10px;color:var(--text-muted);word-break:break-all">${esc(r.url)}</span></td>`;
+
+    if (hasIos) {
+      const ios = r.ios;
+      if (ios) {
+        const iosSt   = computeMobileStatus(ios);
+        const iosCrawl = buildMobileCrawlNotes(ios);
+        const iosRem   = buildMobileRemediationNotes(ios);
+        const iosNotes = [
+          ...iosRem.map(n => `<div style="color:var(--blue);font-weight:600">▶ ${esc(n)}</div>`),
+          ...iosCrawl.map(n => `<div style="color:var(--text-muted)">· ${esc(n)}</div>`),
+        ].join('');
+        html += `<td class="device-col-ios group-start-ios" style="white-space:nowrap">${renderStatusBadge(iosSt)}</td>`;
+        html += `<td class="device-col-ios">${ios.mmp_detected ? `<span class="mmp-badge">${esc(ios.mmp_detected.toUpperCase())}</span>` : '<span class="bool-na">—</span>'}</td>`;
+        html += `<td class="device-col-ios" style="white-space:nowrap">${terminalBadge(ios.terminal_type)}</td>`;
+        html += `<td class="device-col-ios"><span style="font-size:10px;user-select:all;word-break:break-all">${esc(ios.click_id || '—')}</span></td>`;
+        html += `<td class="device-col-ios"><div style="font-size:10px;line-height:1.6">${iosNotes || '<span style="color:var(--text-muted)">—</span>'}</div></td>`;
+      } else {
+        html += '<td class="device-col-ios group-start-ios" colspan="5" style="color:var(--text-muted)">—</td>';
+      }
+    }
+
+    if (hasAndroid) {
+      const and = r.android;
+      if (and) {
+        const andSt   = computeMobileStatus(and);
+        const andCrawl = buildMobileCrawlNotes(and);
+        const andRem   = buildMobileRemediationNotes(and);
+        const andNotes = [
+          ...andRem.map(n => `<div style="color:var(--blue);font-weight:600">▶ ${esc(n)}</div>`),
+          ...andCrawl.map(n => `<div style="color:var(--text-muted)">· ${esc(n)}</div>`),
+        ].join('');
+        html += `<td class="device-col-android group-start-android" style="white-space:nowrap">${renderStatusBadge(andSt)}</td>`;
+        html += `<td class="device-col-android">${and.mmp_detected ? `<span class="mmp-badge">${esc(and.mmp_detected.toUpperCase())}</span>` : '<span class="bool-na">—</span>'}</td>`;
+        html += `<td class="device-col-android" style="white-space:nowrap">${terminalBadge(and.terminal_type)}</td>`;
+        html += `<td class="device-col-android"><span style="font-size:10px;user-select:all;word-break:break-all">${esc(and.click_id || '—')}</span></td>`;
+        html += `<td class="device-col-android"><div style="font-size:10px;line-height:1.6">${andNotes || '<span style="color:var(--text-muted)">—</span>'}</div></td>`;
+      } else {
+        html += '<td class="device-col-android group-start-android" colspan="5" style="color:var(--text-muted)">—</td>';
+      }
+    }
+
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.mobile-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = parseInt(row.dataset.idx);
+      openMobileDrawer(state.mobileResults[idx]);
+    });
+  });
+}
+
+function renderHopChain(hops) {
+  if (!hops || !hops.length) return '<div style="color:var(--text-muted);font-size:11px;padding:8px">No redirect chain captured.</div>';
+  return hops.map(hop => {
+    const statusCls = hop.status >= 200 && hop.status < 300 ? 's200'
+                    : hop.status >= 300 && hop.status < 400 ? 's301'
+                    : 'serr';
+    return `<div class="mobile-chain-hop">
+      <div class="mobile-hop-header">
+        <span class="mobile-hop-status ${statusCls}">${hop.status || '—'}</span>
+        ${hopTypeBadge(hop.hop_type || 'normal')}
+        <span class="mobile-hop-url" style="word-break:break-all;white-space:normal;font-size:12px;flex:1">${esc(hop.url)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openMobileDrawer(r) {
+  const drawer  = document.getElementById('detail-drawer');
+  const overlay = document.getElementById('drawer-overlay');
+  if (!drawer || !overlay) return;
+
+  const hasIos     = !!r.ios;
+  const hasAndroid = !!r.android;
+  const isWide     = drawer._mobileWide || false;
+
+  const buildPanel = (d, label, cls, copyKey) => {
+    if (!d) return '';
+    const crawlNotes       = buildMobileCrawlNotes(d);
+    const remediationNotes = buildMobileRemediationNotes(d);
+    const status           = computeMobileStatus(d);
+
+    // Per-section copy keys
+    const ckChain   = `${copyKey}_chain`;
+    const ckPayload = `${copyKey}_payload`;
+    const ckCrawl   = `${copyKey}_crawl`;
+
+    const crawlText   = crawlNotes.join('\n');
+    const chainText   = (d.redirect_chain || []).map(h => `${h.status} [${h.hop_type}] ${h.url}`).join('\n');
+    const payloadText = d.mmp_handoff_url
+      ? JSON.stringify(parseUrlParams(d.mmp_handoff_url, true) || {}, null, 2)
+      : '';
+
+    // Register per-section copy values (merged into _mobileCopyValues after buildPanel returns)
+    buildPanel._extra = buildPanel._extra || {};
+    if (crawlText)   buildPanel._extra[ckCrawl]   = crawlText;
+    if (chainText)   buildPanel._extra[ckChain]   = chainText;
+    if (payloadText) buildPanel._extra[ckPayload] = payloadText;
+
+    // Full-width section header matching desktop style
+    const sectionHead = (title, grpCls, ckSec) =>
+      `<div class="dv-section-title ${grpCls}" style="display:flex;justify-content:space-between;align-items:center;border-radius:3px;padding:6px 10px;margin:14px 0 6px">
+         <span>${title}</span>
+         ${ckSec ? `<button class="dv-copy mobile-section-copy" data-copy="${ckSec}">Copy</button>` : ''}
+       </div>`;
+
+    const remediationSection = remediationNotes.length
+      ? sectionHead('RECOMMENDED ACTION', 'grp-action', '') +
+        `<pre class="dv-block" style="color:var(--blue);border-color:rgba(74,158,255,0.3);background:rgba(74,158,255,0.05);word-break:normal;overflow-wrap:break-word;white-space:pre-wrap;margin-bottom:0">${remediationNotes.map(n => `· ${esc(n)}`).join('\n')}</pre>`
+      : '';
+
+    const crawlSection = crawlNotes.length
+      ? sectionHead('CRAWL NOTES', 'grp-notes', ckCrawl) +
+        `<pre class="dv-block" style="font-size:12px;color:var(--text-muted);border-color:var(--border);background:var(--bg-input);word-break:normal;overflow-wrap:break-word;white-space:pre-wrap;margin-bottom:0">${crawlNotes.map(n => `· ${esc(n)}`).join('\n')}</pre>`
+      : '';
+
+    const payloadSection = d.mmp_handoff_url
+      ? sectionHead('MMP HANDOFF PAYLOAD', 'grp-utt', ckPayload) +
+        `<pre style="margin:0;font-size:11px;line-height:1.5;color:var(--text-dim);white-space:pre-wrap;word-break:break-all;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;padding:8px">${esc(payloadText)}</pre>`
+      : '';
+
+    // Short device label and uppercase MMP name for header
+    const shortLabel = label === 'iOS Safari' ? 'iOS' : 'Android';
+    const mmpLabel   = d.mmp_detected ? d.mmp_detected.toUpperCase() : null;
+
+    // General fields — desktop dv-field pattern: label above value, hairline separator
+    const field = (lbl, val, extra = '') =>
+      val
+        ? `<div class="dv-field">
+             <div class="dv-label">${lbl}</div>
+             <div class="dv-value" ${extra}>${esc(String(val))}</div>
+           </div>`
+        : '';
+
+    const generalSection =
+      sectionHead('GENERAL', 'grp-general', '') +
+      `<div style="padding:0 2px">` +
+        field('status',      status) +
+        field('destination', d.terminal_type) +
+        (d.mmp_detected ? field('mmp', d.mmp_detected.toUpperCase()) : '') +
+        (d.final_url    ? field('final_url', d.final_url, 'style="word-break:break-all"') : '') +
+        (d.mmp_handoff_url ? field('handoff_url', d.mmp_handoff_url, 'style="word-break:break-all"') : '') +
+        (d.click_id
+          ? `<div class="dv-field">
+               <div class="dv-label">click_id</div>
+               <div class="dv-value" style="display:flex;align-items:center;gap:10px;word-break:break-all">
+                 <span style="flex:1;user-select:all">${esc(d.click_id)}</span>
+                 <button class="events-btn" data-eid="${esc(d.click_id)}" style="flex-shrink:0">↗ ER</button>
+               </div>
+             </div>`
+          : `<div class="dv-field"><div class="dv-label">click_id</div><div class="dv-value" style="color:var(--coral)">not detected</div></div>`
+        ) +
+      `</div>`;
+
+    return `<div class="mobile-drawer-panel">
+      <div class="mobile-panel-header ${cls}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <span style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          ${label === 'iOS Safari' ? '📱' : '🤖'} <strong>${shortLabel}</strong>
+          ${mmpLabel ? `<span class="mmp-badge">${mmpLabel}</span>` : ''}
+          ${terminalBadge(d.terminal_type)}
+        </span>
+        <span style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+          ${renderStatusBadge(status)}
+          <button class="dv-copy mobile-device-copy" data-copy="${copyKey}">Copy</button>
+        </span>
+      </div>
+      ${remediationSection}
+      ${crawlSection}
+      ${generalSection}
+      ${payloadSection}
+      ${sectionHead('REDIRECT CHAIN', 'grp-notes', ckChain)}
+      ${renderHopChain(d.redirect_chain)}
+    </div>`;
+  };
+
+  const iosText     = hasIos     ? buildMobilePlainTextDevice(r, r.ios,     'iOS Safari')     : '';
+  const androidText = hasAndroid ? buildMobilePlainTextDevice(r, r.android, 'Android Chrome') : '';
+  const allText     = buildMobilePlainText(r);
+
+  // Key '__all__' wires to the existing real header Copy All button
+  drawer._mobileCopyValues = {
+    '__all__':            allText,
+    '__mobile_ios__':     iosText,
+    '__mobile_android__': androidText,
+  };
+
+  const bothDevices = hasIos && hasAndroid;
+
+  const panelStyle = (isWide && bothDevices)
+    ? 'display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;align-items:start'
+    : 'display:flex;flex-direction:column;gap:16px;padding:16px';
+
+  // Update real drawer header elements
+  const drawerTitleEl = drawer.querySelector('.drawer-title');
+  if (drawerTitleEl) drawerTitleEl.textContent = r.campaign_name || r.campaign_id || r.url;
+  const drawerStatusEl = drawer.querySelector('.drawer-status');
+  if (drawerStatusEl) drawerStatusEl.textContent = r.campaign_id ? `Campaign ID: ${r.campaign_id}` : '';
+  const drawerLinkEl = drawer.querySelector('.drawer-link');
+  if (drawerLinkEl) drawerLinkEl.textContent = r.url || '';
+
+  // Reconfigure the Expand button as Side by Side toggle — hidden when only one device
+  const expandBtn = document.getElementById('drawer-expand');
+  if (expandBtn) {
+    expandBtn.style.display = bothDevices ? '' : 'none';
+    expandBtn.textContent = isWide ? '⇥ Stack' : '⇤ Side by Side';
+    expandBtn.onclick = () => {
+      if (!bothDevices) return;
+      drawer._mobileWide = !drawer._mobileWide;
+      const panels = document.getElementById('mobile-panels');
+      if (panels) {
+        panels.style.cssText = drawer._mobileWide
+          ? 'display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px;align-items:start'
+          : 'display:flex;flex-direction:column;gap:16px;padding:16px';
+      }
+      expandBtn.textContent = drawer._mobileWide ? '⇥ Stack' : '⇤ Side by Side';
+      drawer.classList.toggle('wide', !!drawer._mobileWide);
+    };
+  }
+
+  buildPanel._extra = {};
+  let html = `<div id="mobile-panels" style="${panelStyle}">`;
+  if (hasIos)     html += buildPanel(r.ios,     'iOS Safari',     'ios',     '__mobile_ios__');
+  if (hasAndroid) html += buildPanel(r.android, 'Android Chrome', 'android', '__mobile_android__');
+  html += '</div>';
+
+  // Merge per-section copy values collected during buildPanel calls
+  Object.assign(drawer._mobileCopyValues, buildPanel._extra || {});
+
+  drawer.querySelector('.drawer-body').innerHTML = html;
+
+  // Wire ALL copy buttons in the drawer (including real header Copy All)
+  drawer.querySelectorAll('.dv-copy, .drawer-copy-all, .mobile-device-copy, .mobile-section-copy').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const key  = btn.dataset.copy;
+      const vals = drawer._mobileCopyValues || {};
+      navigator.clipboard.writeText(vals[key] || '').then(() => {
+        btn.textContent = 'Copied';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+      });
+    });
+  });
+
+  drawer.classList.add('open');
+  overlay.classList.add('visible');
+}
+
+// Helper — generates the triple-line banner style used in copy text
+function sectionBanner(title) {
+  const width = Math.max(title.length + 8, 36);
+  const bar   = '='.repeat(width);
+  const pad   = Math.floor((width - title.length - 2) / 2);
+  const lPad  = '='.repeat(pad);
+  const rPad  = '='.repeat(width - title.length - 2 - pad);
+  return `${bar}\n${lPad} ${title} ${rPad}\n${bar}`;
+}
+
+function buildMobilePlainTextDevice(r, d, label) {
+  if (!d) return '';
+  const lines = [];
+  const crawlNotes = buildMobileCrawlNotes(d);
+  const remNotes   = buildMobileRemediationNotes(d);
+  const status     = computeMobileStatus(d);
+  const dev        = label.toUpperCase();
+
+  if (remNotes.length) {
+    lines.push('');
+    lines.push(sectionBanner(`${dev} — RECOMMENDED ACTION`));
+    remNotes.forEach(n => lines.push(n));
+  }
+
+  lines.push('');
+  lines.push(sectionBanner(`${dev} — GENERAL`));
+  lines.push(`campaign_id: ${r.campaign_id || 'N/A'}`);
+  lines.push(`campaign_name: ${r.campaign_name || 'N/A'}`);
+  lines.push(`tracking_link: ${r.url}`);
+
+  lines.push('');
+  lines.push(sectionBanner(dev));
+  lines.push(`status: ${status}`);
+  lines.push(`destination: ${d.terminal_type}`);
+  if (d.final_url)       lines.push(`final_url: ${d.final_url}`);
+  if (d.mmp_detected)    lines.push(`mmp: ${d.mmp_detected}`);
+  lines.push(`click_id: ${d.click_id || 'not detected'}`);
+  if (d.click_id)        lines.push(`events_url: https://er-api.gcp.srv-impact.net/events.html?id=${encodeURIComponent(d.click_id)}`);
+  if (d.mmp_handoff_url) lines.push(`handoff_url: ${d.mmp_handoff_url}`);
+
+  if (crawlNotes.length) {
+    lines.push('');
+    lines.push(sectionBanner(`${dev} — CRAWL NOTES`));
+    crawlNotes.forEach(n => lines.push(n));
+  }
+
+  if (d.mmp_handoff_url) {
+    lines.push('');
+    lines.push(sectionBanner(`${dev} — MMP HANDOFF PAYLOAD`));
+    const parsed = parseUrlParams(d.mmp_handoff_url, true);
+    lines.push(parsed ? JSON.stringify(parsed, null, 2) : d.mmp_handoff_url);
+  }
+
+  lines.push('');
+  lines.push(sectionBanner(`${dev} — REDIRECT CHAIN`));
+  (d.redirect_chain || []).forEach(hop => lines.push(`${hop.status} [${hop.hop_type}] ${hop.url}`));
+
+  return lines.join('\n');
+}
+
+function buildMobilePlainText(r) {
+  const lines = [];
+
+  const formatDevice = (d, label) => {
+    if (!d) return;
+    const crawlNotes = buildMobileCrawlNotes(d);
+    const remNotes   = buildMobileRemediationNotes(d);
+    const status     = computeMobileStatus(d);
+    const dev        = label.toUpperCase();
+
+    if (remNotes.length) {
+      lines.push('');
+      lines.push(sectionBanner(`${dev} — RECOMMENDED ACTION`));
+      remNotes.forEach(n => lines.push(n));
+    }
+
+    lines.push('');
+    lines.push(sectionBanner(`${dev} — GENERAL`));
+    lines.push(`campaign_id: ${r.campaign_id || 'N/A'}`);
+    lines.push(`campaign_name: ${r.campaign_name || 'N/A'}`);
+    lines.push(`tracking_link: ${r.url}`);
+
+    lines.push('');
+    lines.push(sectionBanner(dev));
+    lines.push(`status: ${status}`);
+    lines.push(`destination: ${d.terminal_type}`);
+    if (d.final_url)       lines.push(`final_url: ${d.final_url}`);
+    if (d.mmp_detected)    lines.push(`mmp: ${d.mmp_detected}`);
+    lines.push(`click_id: ${d.click_id || 'not detected'}`);
+    if (d.click_id)        lines.push(`events_url: https://er-api.gcp.srv-impact.net/events.html?id=${encodeURIComponent(d.click_id)}`);
+    if (d.mmp_handoff_url) lines.push(`handoff_url: ${d.mmp_handoff_url}`);
+
+    if (crawlNotes.length) {
+      lines.push('');
+      lines.push(sectionBanner(`${dev} — CRAWL NOTES`));
+      crawlNotes.forEach(n => lines.push(n));
+    }
+
+    if (d.mmp_handoff_url) {
+      lines.push('');
+      lines.push(sectionBanner(`${dev} — MMP HANDOFF PAYLOAD`));
+      const parsed = parseUrlParams(d.mmp_handoff_url, true);
+      lines.push(parsed ? JSON.stringify(parsed, null, 2) : d.mmp_handoff_url);
+    }
+
+    lines.push('');
+    lines.push(sectionBanner(`${dev} — REDIRECT CHAIN`));
+    (d.redirect_chain || []).forEach(hop => lines.push(`${hop.status} [${hop.hop_type}] ${hop.url}`));
+  };
+
+  formatDevice(r.ios,     'iOS Safari');
+  formatDevice(r.android, 'Android Chrome');
+  return lines.join('\n');
+}
+
+function exportMobileCsv() {
+  const results = state.mobileResults || [];
+  if (!results.length) return;
+
+  const hasIos     = results.some(r => r.ios);
+  const hasAndroid = results.some(r => r.android);
+
+  const headers = ['campaign_id', 'campaign_name', 'url'];
+  if (hasIos) {
+    headers.push('ios_status', 'ios_mmp', 'ios_destination', 'ios_click_id', 'ios_final_url', 'ios_crawl_notes', 'ios_remediation_notes', 'ios_redirect_chain');
+  }
+  if (hasAndroid) {
+    headers.push('android_status', 'android_mmp', 'android_destination', 'android_click_id', 'android_final_url', 'android_crawl_notes', 'android_remediation_notes', 'android_redirect_chain');
+  }
+
+  const chainStr = (hops, format) => {
+    if (!hops || !hops.length) return 'N/A';
+    return hops.map(h => `${h.status} [${h.hop_type}] ${h.url}`).join(format === 'csv' ? '\n' : ' → ');
+  };
+
+  const noteStr = d => buildMobileNoteText(d);
+
+  const escape = v => `"${String(v ?? 'N/A').replace(/"/g, '""')}"`;
+
+  const rows = [headers.map(escape).join(',')];
+  results.forEach(r => {
+    const row = [r.campaign_id, r.campaign_name, r.url].map(escape);
+    if (hasIos) {
+      const d = r.ios;
+      row.push(...[
+        computeMobileStatus(d),
+        d?.mmp_detected?.toUpperCase(),
+        d?.terminal_type,
+        d?.click_id,
+        d?.final_url,
+        buildMobileCrawlNotes(d).join(' | '),
+        buildMobileRemediationNotes(d).join(' | '),
+        chainStr(d?.redirect_chain, 'csv'),
+      ].map(escape));
+    }
+    if (hasAndroid) {
+      const d = r.android;
+      row.push(...[
+        computeMobileStatus(d),
+        d?.mmp_detected?.toUpperCase(),
+        d?.terminal_type,
+        d?.click_id,
+        d?.final_url,
+        buildMobileCrawlNotes(d).join(' | '),
+        buildMobileRemediationNotes(d).join(' | '),
+        chainStr(d?.redirect_chain, 'csv'),
+      ].map(escape));
+    }
+    rows.push(row.join(','));
+  });
+
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `mobile-results-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function exportMobileSheets() {
+  const results = state.mobileResults || [];
+  if (!results.length) return;
+  const hasIos     = results.some(r => r.ios);
+  const hasAndroid = results.some(r => r.android);
+
+  const headers = ['campaign_id', 'campaign_name', 'url'];
+  if (hasIos)     headers.push('ios_status', 'ios_mmp', 'ios_destination', 'ios_click_id', 'ios_final_url', 'ios_crawl_notes', 'ios_remediation_notes', 'ios_redirect_chain');
+  if (hasAndroid) headers.push('android_status', 'android_mmp', 'android_destination', 'android_click_id', 'android_final_url', 'android_crawl_notes', 'android_remediation_notes', 'android_redirect_chain');
+
+  const chainStr = hops => (!hops || !hops.length) ? 'N/A' : hops.map(h => `${h.status} [${h.hop_type}] ${h.url}`).join(' → ');
+  const cell = v => String(v ?? 'N/A').replace(/\t/g, ' ').replace(/\n/g, ' ');
+
+  const rows = [headers.join('\t')];
+  results.forEach(r => {
+    const row = [r.campaign_id, r.campaign_name, r.url].map(cell);
+    if (hasIos) {
+      const d = r.ios;
+      row.push(...[
+        computeMobileStatus(d),
+        d?.mmp_detected?.toUpperCase(),
+        d?.terminal_type,
+        d?.click_id,
+        d?.final_url,
+        buildMobileCrawlNotes(d).join(' | '),
+        buildMobileRemediationNotes(d).join(' | '),
+        chainStr(d?.redirect_chain),
+      ].map(cell));
+    }
+    if (hasAndroid) {
+      const d = r.android;
+      row.push(...[
+        computeMobileStatus(d),
+        d?.mmp_detected?.toUpperCase(),
+        d?.terminal_type,
+        d?.click_id,
+        d?.final_url,
+        buildMobileCrawlNotes(d).join(' | '),
+        buildMobileRemediationNotes(d).join(' | '),
+        chainStr(d?.redirect_chain),
+      ].map(cell));
+    }
+    rows.push(row.join('\t'));
+  });
+
+  navigator.clipboard.writeText(rows.join('\n')).then(() => {
+    const btn = document.getElementById('export-sheets-btn');
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 2000);
+    }
+  });
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 
 function setMode(mode) {
@@ -1792,21 +2625,43 @@ function goToStep(n) {
 
   // Step-entry side effects
   if (n === 2) {
-    // Substitute campaign IDs into SQL
-    const sql = SQL_QUERY.replace('{campaign_id}', state.campaignIds.join(', '));
+    // Substitute campaign IDs into correct SQL (desktop or mobile)
+    const sql = getActiveSql().replace('{campaign_id}', state.campaignIds.join(', '));
     document.getElementById('wt-sql-code').innerHTML = highlightSql(sql);
+    // Update step label to reflect mode
+    const isMobile = state.testingMode && state.testingMode !== 'desktop';
+    const sqlTitle = document.querySelector('[data-step="2"] .step-title');
+    if (sqlTitle) sqlTitle.textContent = isMobile ? 'SQL Query — Mobile' : 'SQL Query';
   }
 
   if (n === 4) {
     // Populate verify preview from state.parsed
     renderWalkthroughPreview();
     syncConfigToWalkthrough();
+    // Pre-set and lock device selector based on step 1 selection
+    const wtDevice = document.getElementById('wt-cfg-device');
+    const wbDevice = document.getElementById('cfg-device');
+    if (wtDevice && state.testingMode) {
+      wtDevice.value   = state.testingMode;
+      wtDevice.disabled = true;
+      if (wbDevice) { wbDevice.value = state.testingMode; }
+    }
   }
 
   // Steps 5 & 6 — terminal + results need to be visible
   if (n === 5 || n === 6) {
     document.getElementById('panel-terminal').classList.remove('hidden');
     document.getElementById('panel-results').classList.remove('hidden');
+  }
+
+  if (n === 5) {
+    const isMobile = state.testingMode && state.testingMode !== 'desktop';
+    const bannerText = document.getElementById('wt-step5-banner-text');
+    const stopBtn    = document.getElementById('wt-step5-stop-identity');
+    if (bannerText) bannerText.textContent = isMobile
+      ? 'Running mobile simulation. CSV will be automatically downloaded when complete.'
+      : 'Once identity enrichment completes, the CSV will be automatically downloaded.';
+    if (stopBtn) stopBtn.style.display = isMobile ? 'none' : '';
   }
 }
 
@@ -1827,7 +2682,7 @@ function parseCampaignIds(text) {
 
 function updateStep1(text) {
   const { ids, error } = parseCampaignIds(text);
-  const meta = document.getElementById('wt-step1-meta');
+  const meta    = document.getElementById('wt-step1-meta');
   const nextBtn = document.getElementById('wt-step1-next');
 
   if (error) {
@@ -1844,9 +2699,10 @@ function updateStep1(text) {
     nextBtn.disabled = true;
     state.campaignIds = [];
   } else {
-    meta.textContent = `${ids.length} campaign ID${ids.length !== 1 ? 's' : ''} detected`;
-    nextBtn.disabled = false;
     state.campaignIds = ids;
+    const modeSelected = !!state.testingMode;
+    meta.textContent = `${ids.length} campaign ID${ids.length !== 1 ? 's' : ''} detected${!modeSelected ? ' — select a testing mode above to continue' : ''}`;
+    nextBtn.disabled = !modeSelected;
   }
 }
 
@@ -1865,10 +2721,23 @@ function updateWalkthroughPreview(text) {
     return;
   }
 
-  const { urls, error } = parseInput(text);
+  const { urls, error, hasMobileColumns } = parseInput(text);
 
   if (error || !urls.length) {
     errorEl.textContent = error || 'No valid URLs detected.';
+    errorEl.classList.remove('hidden');
+    metaEl.textContent = '';
+    nextBtn.disabled = true;
+    state.parsed = [];
+    return;
+  }
+
+  // Mobile mode requires ios_clickid_param and android_clickid_param columns
+  const isMobileMode = state.testingMode && state.testingMode !== 'desktop';
+  if (isMobileMode && !hasMobileColumns) {
+    errorEl.innerHTML =
+      '⚠ Mobile mode requires <code>ios_clickid_param</code> and <code>android_clickid_param</code> columns. ' +
+      'Use the mobile SQL query from the SQL modal — switch your device selection first, then open SQL to get the correct query.';
     errorEl.classList.remove('hidden');
     metaEl.textContent = '';
     nextBtn.disabled = true;
@@ -1895,6 +2764,8 @@ function renderWalkthroughPreview() {
   const urls    = state.parsed;
   if (!urls.length) return;
 
+  const isMobile = state.testingMode && state.testingMode !== 'desktop';
+
   // Meta line — count + click ID param summary
   const params = {};
   urls.forEach(u => {
@@ -1904,9 +2775,32 @@ function renderWalkthroughPreview() {
   const paramSummary = Object.entries(params).map(([k, v]) => `${v} ${k}`).join(' · ');
   metaEl.textContent = `${urls.length} URL${urls.length !== 1 ? 's' : ''} ready · ${paramSummary}`;
 
-  tbodyEl.innerHTML = urls.slice(0, 20).map(u =>
-    `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.campaignName || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td></tr>`
-  ).join('') + (urls.length > 20 ? `<tr><td colspan="4" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
+  const isValidParam = p => p && /^[a-zA-Z0-9_~\-]{1,64}$/.test(p);
+
+  if (isMobile) {
+    tbodyEl.innerHTML = urls.slice(0, 20).map(u => {
+      const ios     = isValidParam(u.iosClickIdParam)     ? esc(u.iosClickIdParam)     : '<span style="color:var(--text-muted)">—</span>';
+      const android = isValidParam(u.androidClickIdParam) ? esc(u.androidClickIdParam) : '<span style="color:var(--text-muted)">—</span>';
+      return `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.campaignName || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td><td>${ios}</td><td>${android}</td></tr>`;
+    }).join('') + (urls.length > 20 ? `<tr><td colspan="6" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
+
+    const thead = document.querySelector('#wt-parse-thead tr');
+    if (thead && !thead.querySelector('.wt-mobile-col')) {
+      ['ios_clickid_param', 'android_clickid_param'].forEach(label => {
+        const th = document.createElement('th');
+        th.className = 'wt-mobile-col';
+        th.textContent = label;
+        thead.appendChild(th);
+      });
+    }
+  } else {
+    tbodyEl.innerHTML = urls.slice(0, 20).map(u =>
+      `<tr><td>${esc(u.campaignId || '')}</td><td>${esc(u.campaignName || '')}</td><td>${esc(u.url)}</td><td>${esc(u.clickIdParam || '')}</td></tr>`
+    ).join('') + (urls.length > 20 ? `<tr><td colspan="4" style="color:var(--text-dim);font-style:italic">…and ${urls.length - 20} more</td></tr>` : '');
+
+    // Remove extra mobile columns if present
+    document.querySelectorAll('#wt-parse-thead tr .wt-mobile-col').forEach(th => th.remove());
+  }
 }
 
 function syncConfigToWalkthrough() {
@@ -1967,9 +2861,10 @@ function maybeAdvanceToStep6() {
 
 function walkthroughRestart() {
   resetAll();
-  state.campaignIds    = [];
-  state.autoDownloaded = false;
+  state.campaignIds     = [];
+  state.autoDownloaded  = false;
   state.identityStopped = false;
+  state.testingMode     = null;
   // Clear walkthrough inputs
   const ci = document.getElementById('wt-campaign-input');
   if (ci) ci.value = '';
@@ -1980,6 +2875,8 @@ function walkthroughRestart() {
   document.getElementById('wt-parse-error').classList.add('hidden');
   document.getElementById('wt-step1-next').disabled = true;
   document.getElementById('wt-step3-next').disabled = true;
+  // Reset mode selector buttons
+  document.querySelectorAll('.wt-mode-btn').forEach(b => b.classList.remove('active'));
   // Reset step 3 input mode to Upload CSV (the default)
   document.querySelectorAll('[data-wt-mode]').forEach(b => b.classList.remove('active'));
   const wtFileBtn = document.querySelector('[data-wt-mode="file"]');
@@ -2116,24 +3013,62 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('run-btn').addEventListener('click', startCrawl);
   document.getElementById('cancel-btn').addEventListener('click', () => {
     if (state.cancelRequested) {
-      // Second click — force-reset UI state. Backend may still be cleaning up
-      // but at least the user can start a new crawl.
       logLine('⚠ Force-resetting UI state. Backend may still be running in background.');
-      window.api.cancelCrawl();  // best-effort
+      window.api.cancelCrawl();
+      window.api.cancelMobileCrawl?.();
       finishCrawl();
       state.cancelRequested = false;
     } else {
       window.api.cancelCrawl();
+      window.api.cancelMobileCrawl?.();
       state.cancelRequested = true;
       logLine('⚠ Cancellation requested. Click Cancel again to force-reset.');
       const btn = document.getElementById('cancel-btn');
       btn.textContent = 'Force Reset';
-      // Also update the status bar — visible regardless of scroll position
       const statusEl = document.getElementById('terminal-status');
       statusEl.textContent = 'Cancelling… click Force Reset if stuck';
       statusEl.style.color = 'var(--amber)';
     }
   });
+
+  // Mobile sub-filter dropdown
+  state.mobileSubFilter = 'all';
+  const mobileSubChevron  = document.getElementById('mobile-sub-chevron');
+  const mobileSubDropdown = document.getElementById('mobile-sub-dropdown');
+
+  if (mobileSubChevron && mobileSubDropdown) {
+    // Toggle dropdown on chevron click
+    mobileSubChevron.addEventListener('click', e => {
+      e.stopPropagation();
+      const isOpen = !mobileSubDropdown.classList.contains('hidden');
+      mobileSubDropdown.classList.toggle('hidden', isOpen);
+      mobileSubChevron.classList.toggle('open', !isOpen);
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener('click', () => {
+      mobileSubDropdown.classList.add('hidden');
+      mobileSubChevron.classList.remove('open');
+    });
+
+    // Sub-filter item clicks
+    mobileSubDropdown.querySelectorAll('.mobile-sub-item').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        mobileSubDropdown.querySelectorAll('.mobile-sub-item').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.mobileSubFilter = btn.dataset.subfilter;
+        // Update chevron label to show active sub-filter when not 'all'
+        const label = btn.dataset.subfilter !== 'all'
+          ? `▾ ${btn.dataset.subfilter.charAt(0).toUpperCase() + btn.dataset.subfilter.slice(1)}`
+          : '▾';
+        mobileSubChevron.textContent = label;
+        mobileSubDropdown.classList.add('hidden');
+        mobileSubChevron.classList.remove('open');
+        renderMobileTable();
+      });
+    });
+  }
 
   // ── Filter tabs ─────────────────────────────────────────────────────────────
   document.querySelectorAll('.filter-tab').forEach(btn => {
@@ -2141,13 +3076,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.filter = btn.dataset.filter;
-      renderTable();
+      const isMobile = btn.dataset.filter === 'mobile';
+      const desktopWrap = document.getElementById('results-table-wrap');
+      const mobileWrap  = document.getElementById('mobile-table-container');
+      if (desktopWrap) desktopWrap.style.display = isMobile ? 'none' : '';
+      if (mobileWrap)  mobileWrap.style.display  = isMobile ? 'block' : 'none';
+      if (isMobile) renderMobileTable();
+      else          renderTable();
     });
   });
 
   // ── Export ──────────────────────────────────────────────────────────────────
-  document.getElementById('export-csv-btn').addEventListener('click', exportCsv);
-  document.getElementById('export-sheets-btn').addEventListener('click', exportSheets);
+  document.getElementById('export-csv-btn').addEventListener('click', () => {
+    if (state.filter === 'mobile') exportMobileCsv();
+    else exportCsv();
+  });
+  document.getElementById('export-sheets-btn').addEventListener('click', () => {
+    if (state.filter === 'mobile') exportMobileSheets();
+    else exportSheets();
+  });
 
   // ── Reset / Re-run Issues ───────────────────────────────────────────────────
   document.getElementById('rerun-issues-btn').addEventListener('click', rerunIssues);
@@ -2161,9 +3108,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ── SQL Modal ────────────────────────────────────────────────────────────────
-  document.getElementById('sql-code').innerHTML = highlightSql(SQL_QUERY);
-
+  // Render is deferred to open time so it picks up the active mode (desktop vs mobile)
   document.getElementById('sql-btn').addEventListener('click', () => {
+    const sql = getActiveSql();
+    document.getElementById('sql-code').innerHTML = highlightSql(sql);
     document.getElementById('sql-modal').classList.remove('hidden');
   });
   document.getElementById('sql-modal-close').addEventListener('click', () => {
@@ -2173,7 +3121,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
   });
   document.getElementById('sql-copy-btn').addEventListener('click', () => {
-    navigator.clipboard.writeText(SQL_QUERY).then(() => {
+    const sql = getActiveSql();
+    navigator.clipboard.writeText(sql).then(() => {
       const btn = document.getElementById('sql-copy-btn');
       btn.textContent = 'Copied!';
       btn.classList.add('copied');
@@ -2256,7 +3205,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (searchInput) {
     searchInput.addEventListener('input', () => {
       state.searchQuery = searchInput.value;
-      renderTable();
+      if (state.filter === 'mobile') renderMobileTable();
+      else renderTable();
     });
   }
 
@@ -2270,6 +3220,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn.addEventListener('click', () => setMode(btn.dataset.mode));
   });
 
+  // Step 1 — testing mode selector
+  document.querySelectorAll('.wt-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.wt-mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const prevMobile = state.testingMode && state.testingMode !== 'desktop';
+      const nextMobile = btn.dataset.mode !== 'desktop';
+      state.testingMode = btn.dataset.mode;
+
+      // If switching between desktop and mobile (either direction), clear step 3 input
+      // so stale data from the wrong query doesn't carry over
+      if (prevMobile !== nextMobile) {
+        const wtPaste = document.getElementById('wt-paste-input');
+        if (wtPaste) wtPaste.value = '';
+        const wtFile = document.getElementById('wt-file-input');
+        if (wtFile) wtFile.value = '';
+        state.parsed = [];
+        // Reset step 3 tab back to Upload CSV
+        document.querySelectorAll('[data-wt-mode]').forEach(b => b.classList.remove('active'));
+        const fileBtn = document.querySelector('[data-wt-mode="file"]');
+        if (fileBtn) fileBtn.classList.add('active');
+        document.querySelectorAll('.wt-input-pane').forEach(p => p.classList.add('hidden'));
+        const filePane = document.getElementById('wt-mode-file');
+        if (filePane) filePane.classList.remove('hidden');
+        updateWalkthroughPreview('');
+      }
+
+      // Re-evaluate Next button state
+      const ci = document.getElementById('wt-campaign-input');
+      if (ci) updateStep1(ci.value);
+    });
+  });
+
   // Step 1 — campaign IDs input
   const wtCampaignInput = document.getElementById('wt-campaign-input');
   if (wtCampaignInput) {
@@ -2281,7 +3265,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('wt-step2-back').addEventListener('click', () => goToStep(1));
   document.getElementById('wt-step2-next').addEventListener('click', () => goToStep(3));
   document.getElementById('wt-sql-copy').addEventListener('click', () => {
-    const sql = SQL_QUERY.replace('{campaign_id}', state.campaignIds.join(', '));
+    const sql = getActiveSql().replace('{campaign_id}', state.campaignIds.join(', '));
     navigator.clipboard.writeText(sql).then(() => {
       const btn = document.getElementById('wt-sql-copy');
       btn.textContent = 'Copied!';
@@ -2360,6 +3344,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       wb.addEventListener('input',  () => { wt.value = wb.value; });
     }
   });
+  // Device selector sync
+  const wtDevice = document.getElementById('wt-cfg-device');
+  const wbDevice = document.getElementById('cfg-device');
+  if (wtDevice && wbDevice) {
+    wtDevice.addEventListener('change', () => { wbDevice.value = wtDevice.value; });
+    wbDevice.addEventListener('change', () => { wtDevice.value = wbDevice.value; });
+  }
 
   document.getElementById('wt-step4-back').addEventListener('click', () => goToStep(3));
   document.getElementById('wt-step4-run').addEventListener('click', () => {
@@ -2368,9 +3359,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     startCrawl();
   });
 
-  // Step 5 — cancel crawl
+  // Step 5 — cancel crawl (handles both desktop and mobile)
   document.getElementById('wt-step5-cancel').addEventListener('click', () => {
     window.api.cancelCrawl();
+    window.api.cancelMobileCrawl?.();
     state.cancelRequested = true;
     logLine('⚠ Cancellation requested.');
   });

@@ -27,6 +27,12 @@ contextBridge.exposeInMainWorld('api', {
   onIdentityDone:    fn => ipcRenderer.on('identity:done',   ()     => fn()),
   onUpdateAvailable: fn => ipcRenderer.on('update:available',(_, v) => fn(v)),
 
+  // Mobile crawl
+  startMobileCrawl: (urls, config) => ipcRenderer.invoke('mobile:start', { urls, config }),
+  cancelMobileCrawl: ()            => ipcRenderer.invoke('mobile:cancel'),
+  onMobileResult:    fn => ipcRenderer.on('mobile:result', (_, v) => fn(v)),
+  onMobileDone:      fn => ipcRenderer.on('mobile:done',   ()     => fn()),
+
   // Cleanup
   off: channel => ipcRenderer.removeAllListeners(channel),
 
