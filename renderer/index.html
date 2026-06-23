@@ -448,9 +448,10 @@ MySQL table format:
       <div class="step-num">1</div>
       <div class="step-body">
         <h3>Choose your mode</h3>
-        <p>The app has two modes, toggled from the topbar pill. <strong>Walkthrough</strong> (default) guides you through each step in sequence. <strong>Workbench</strong> gives you the full input panel directly — for power users who already know the flow.</p>
-        <div class="howto-note"><strong>Walkthrough mode</strong> — enter campaign IDs, copy the generated SQL, paste or upload the results, review the URL list, then run. The app advances through each step automatically and downloads your CSV when complete.</div>
-        <div class="howto-note"><strong>Workbench mode</strong> — paste or upload query results directly, configure settings, and click Run. Switching to Workbench mid-session preserves any results already in memory.</div>
+        <p>The app has two UI modes (toggled from the topbar pill) and two device modes (selected in the input panel).</p>
+        <div class="howto-note"><strong>Walkthrough mode</strong> — guided step-by-step flow. Enter campaign IDs → SQL is generated → paste or upload results → review URL list → run. CSV downloads automatically when complete.</div>
+        <div class="howto-note"><strong>Workbench mode</strong> — direct access to the full input panel. Use the <strong>SQL ⓘ</strong> button to get the query, run it in <code>r_ds_multiDb</code>, paste or upload the result, configure settings, and run. Switching mid-session preserves results in memory.</div>
+        <div class="howto-note"><strong>Device mode</strong> — controls what the crawler validates. <strong>Desktop</strong> (default) crawls with a standard Mac/Chrome user agent and validates UTT, Shopify Plugin, and identity graph. <strong>iOS / Android / Both</strong> crawl with mobile user agents to trace MMP handoffs and app-store redirects. Each mode uses a different SQL query.</div>
       </div>
     </div>
 
@@ -458,10 +459,11 @@ MySQL table format:
       <div class="step-num">2</div>
       <div class="step-body">
         <h3>Generate your input</h3>
-        <p>In Walkthrough mode, the SQL query is generated for you once you enter your campaign IDs. In Workbench mode, use the <strong>SQL ⓘ</strong> button to open the query. Run it in <code>r_ds_multiDb</code> and paste or upload the result.</p>
-        <div class="howto-note">The tool accepts both plain CSV and MySQL table output (with <code>+---+</code> borders) — paste either directly. You can also upload a CSV file.</div>
-        <div class="howto-note">CSV column order: <code>URL, clickid_param, campaign_id, campaign_name</code> — <code>campaign_name</code> is optional; if absent it will not appear in results.</div>
-        <div class="howto-note">Example: <code>https://brand.sjv.io/c/2222/123/456,irclickid,456,Brand Name</code></div>
+        <p>Click the <strong>SQL ⓘ</strong> button (Workbench) or follow Walkthrough step 2. The query shown automatically reflects your current device mode — switch device mode first, then open SQL to get the correct query.</p>
+        <div class="howto-note"><strong>Desktop query</strong> — returns: <code>URL, clickid_param, campaign_id, campaign_name</code>. Run in <code>r_ds_multiDb</code>.</div>
+        <div class="howto-note"><strong>Mobile query</strong> — returns: <code>URL, clickid_param, android_clickid_param, ios_clickid_param, campaign_id, campaign_name</code>. The mobile-specific columns extract click ID parameter names from the <code>mobile_app_landingpages</code> field. Run in <code>r_ds_multiDb</code>.</div>
+        <div class="howto-warn">In mobile mode, the input <strong>must</strong> include <code>android_clickid_param</code> and <code>ios_clickid_param</code> columns — the tool validates this on paste and will show an error if the desktop query was used by mistake.</div>
+        <div class="howto-note">The tool accepts both plain CSV and MySQL table output (<code>+---+</code> borders) — paste either format directly, or upload a CSV file.</div>
       </div>
     </div>
 
@@ -469,45 +471,73 @@ MySQL table format:
       <div class="step-num">3</div>
       <div class="step-body">
         <h3>Configure and run</h3>
-        <p>Adjust settings if needed, then click <strong>Run</strong>. The terminal streams live progress. Results appear in the table as each URL completes — you don't need to wait for the full batch.</p>
-        <div class="howto-note">Identity enrichment runs automatically in the background after the crawl completes. Up to 15 lookups run in parallel, retrying every 30 seconds for up to ~5 minutes. Rows update in place as data resolves.</div>
-        <div class="howto-note">If identity enrichment is taking too long, click <strong>Stop Identity</strong> in the running banner. Results that have already resolved are preserved; unresolved rows are marked N/A. In Walkthrough mode this triggers an immediate CSV download with a <code>_partial</code> filename.</div>
-        <div class="howto-warn">All crawls use test partner ID <strong>2222</strong> in the tracking URL. Some programs use Traffic Guard, which will strip the click ID when the partner ID is not recognised. If this occurs, test with partner ID <strong>1111</strong> or a live link instead.</div>
+        <p>Adjust settings if needed, select your device(s) in mobile mode, then click <strong>Run</strong>. The terminal streams live progress. Results appear as each URL completes.</p>
+        <div class="howto-note"><strong>Desktop:</strong> Identity enrichment runs automatically after the crawl — up to 15 lookups in parallel, retrying every 30s for ~5 minutes. Rows update in place. Click <strong>Stop Identity</strong> to halt early; resolved rows are preserved, unresolved rows marked N/A.</div>
+        <div class="howto-note"><strong>Mobile:</strong> iOS and Android crawl in parallel per URL. No identity enrichment — mobile results focus on redirect chain, MMP handoff, and click ID propagation.</div>
+        <div class="howto-warn">All crawls use test partner ID <strong>2222</strong>. Programs with Traffic Guard may reject this and strip the click ID. If this occurs, test with partner ID <strong>1111</strong> or a live link instead.</div>
       </div>
     </div>
 
     <div class="howto-step">
       <div class="step-num">4</div>
       <div class="step-body">
-        <h3>Read results</h3>
-        <p>Use the colour-coded filter tabs to view by integration type or status. Click any row to open the detail drawer — showing cookies, redirect chain, identity graph data, and a <strong>Recommended Action</strong> when issues are detected.</p>
-        <div class="howto-note">Check results are shown as <strong>✓</strong> (pass) / <strong>✗</strong> (fail) / <strong>—</strong> (not applicable for this integration type).</div>
-        <div class="howto-note">When a click ID is detected, an <strong>↗ ER</strong> button appears in the results table and the detail drawer. Click it to open the internal Event Repository for that click ID — shows the click's data and metadata. Note: these are test clicks generated in an isolated incognito session; only the click record itself will be present, not impression or conversion events.</div>
-        <div class="howto-warn">A <strong>⚠</strong> on <code>CustomerId</code> means a CustomerId was passed in an anonymous session — this should only fire post-authentication. Flag to client and advise using <code>CustomProfileId</code> instead.</div>
+        <h3>Read results — Desktop</h3>
+        <p>Use the filter tabs to view by integration type or status. Click any row to open the detail drawer — showing the full redirect chain, cookies, UTT/Shopify payloads, identity graph data, and a <strong>Recommended Action</strong> when issues are detected.</p>
+        <div class="howto-note">Check results show as <strong>✓</strong> (pass) / <strong>✗</strong> (fail) / <strong>—</strong> (not applicable for this integration type).</div>
+        <div class="howto-note">When a click ID is detected, an <strong>↗ ER</strong> button links to the internal Event Repository for that click ID. These are test clicks in an isolated incognito session — only the click record itself will be present, not impression or conversion events.</div>
+        <div class="howto-warn">A <strong>⚠</strong> on <code>CustomerId</code> means a customer ID was passed in an anonymous session — this should only fire post-authentication. Flag to the client and advise using <code>CustomProfileId</code> instead.</div>
       </div>
     </div>
 
     <div class="howto-step">
       <div class="step-num">5</div>
       <div class="step-body">
-        <h3>Export results</h3>
-        <p>In <strong>Walkthrough mode</strong>, a CSV is automatically downloaded when both the crawl and identity enrichment complete. The filename includes <code>_complete</code> (or <code>_partial</code> if identity was stopped early). In <strong>Workbench mode</strong>, use <strong>↓ CSV</strong> or <strong>⧉ Sheets</strong> to export manually — both respect the active filter tab.</p>
-        <div class="howto-note">The <strong>Copy All</strong> button in the detail drawer generates a plain-text dump of all fields for a single result — useful for pasting into tickets or Slack.</div>
-        <div class="howto-note">Use <strong>↻ Re-run Issues</strong> to re-crawl only failed or skipped URLs using the current config. Results replace the original rows in place.</div>
+        <h3>Read results — Mobile</h3>
+        <p>Mobile results appear under the <strong>Mobile</strong> filter tab. Each row shows per-device status, MMP, destination, and click ID for both iOS and Android. Click a row to open the mobile drawer.</p>
+        <div class="howto-note"><strong>Status badges:</strong> PASS — click ID detected and handoff/landing confirmed. WARN — handoff detected but no click ID (configuration issue). FAIL — no handoff, no MMP, no landing. SKIP — tracking link never redirected beyond the impact domain.</div>
+        <div class="howto-note"><strong>Destinations:</strong> App Store iOS / App Store Android — direct app-store redirect. MMP Link — crawler reached the MMP handoff but cannot follow through (tool limitation — manual device testing required). MMP Interstitial — Button network interstitial detected. Mobile Web — landed on a mobile web page. No Redirect — never left the impact domain.</div>
+        <div class="howto-note">Use the <strong>▾</strong> chevron next to the Mobile tab to sub-filter by MMP (programs with app-store or MMP handoff) or Non-MMP (mobile web and no-redirect programs).</div>
+        <div class="howto-note">The mobile drawer shows Recommended Action, Crawl Notes, General details, MMP Handoff Payload, and Redirect Chain — each section has its own <strong>Copy</strong> button. The <strong>↗ ER</strong> button links directly to the Event Repository for the detected click ID.</div>
       </div>
     </div>
 
-    <h3>Filter Tabs</h3>
+    <div class="howto-step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <h3>Export results</h3>
+        <p>In <strong>Walkthrough mode</strong>, a CSV downloads automatically when the run completes. In <strong>Workbench mode</strong>, use <strong>↓ CSV</strong> or <strong>⧉ Sheets</strong> — both respect the active filter tab, and both work for desktop and mobile results.</p>
+        <div class="howto-note"><strong>Sheets</strong> copies tab-separated values to the clipboard — paste directly into Google Sheets. CSV downloads a file.</div>
+        <div class="howto-note">The <strong>Copy All</strong> button in the detail drawer generates a plain-text dump of all fields for a single result — useful for Slack or tickets. The mobile drawer also has per-section copy buttons (Crawl Notes, Redirect Chain, MMP Handoff Payload).</div>
+        <div class="howto-note">Use <strong>↻ Re-run Issues</strong> to re-crawl only failed or skipped desktop results using current settings. Results replace the original rows in place.</div>
+      </div>
+    </div>
+
+    <h3>Desktop Filter Tabs</h3>
     <table class="doc-table">
       <thead><tr><th>Filter</th><th>Shows</th></tr></thead>
       <tbody>
         <tr><td>All</td><td>Every result in the current run.</td></tr>
         <tr><td>UTT</td><td>Programs using the Universal Tracking Tag only.</td></tr>
-        <tr><td>Shopify</td><td>Programs using the Shopify Plugin only.</td></tr>
-        <tr><td>Hybrid</td><td>Programs where both UTT and Shopify signals were detected, or UTT is using a Shopify cookie as CustomProfileId.</td></tr>
-        <tr><td>ClickId</td><td>Programs where the click ID was found in a cookie but no UTT or Shopify tracking was detected. May indicate CAPI or a custom integration.</td></tr>
-        <tr><td>Unknown</td><td>No recognisable integration signals detected. May indicate a custom implementation — verify manually.</td></tr>
-        <tr><td>Issues</td><td>Results with FAIL status, CAPTCHA blocks, or navigation errors — regardless of integration type. Also includes SKIP results where an integration was detected. Unknown SKIPs go to the Unknown filter for manual review.</td></tr>
+        <tr><td>Shopify</td><td>Programs using the Shopify Plugin (Page Load API) only.</td></tr>
+        <tr><td>Hybrid</td><td>Both UTT and Shopify detected simultaneously, or UTT using a Shopify session cookie as CustomProfileId.</td></tr>
+        <tr><td>PLA</td><td>Non-Shopify Page Load API calls (direct PLA integrations).</td></tr>
+        <tr><td>ClickId</td><td>Click ID in a cookie but no UTT or Shopify detected. May indicate CAPI or a custom integration.</td></tr>
+        <tr><td>Unknown</td><td>No recognisable integration signals. Verify manually via Loggly or SQL.</td></tr>
+        <tr><td>Issues</td><td>FAIL results, CAPTCHA blocks, and navigation errors regardless of integration type.</td></tr>
+        <tr><td>Mobile</td><td>Mobile simulation results. Appears after a mobile crawl. Use the ▾ chevron to sub-filter by MMP or Non-MMP.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Mobile Terminal Types</h3>
+    <table class="doc-table">
+      <thead><tr><th>Type</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td>App Store iOS</td><td>Redirect chain ended at apps.apple.com or itunes.apple.com.</td></tr>
+        <tr><td>App Store Android</td><td>Redirect chain ended at play.google.com.</td></tr>
+        <tr><td>MMP Link</td><td>Crawler reached an MMP handoff URL (AppsFlyer, Branch, Adjust, etc.) but cannot follow the app deep-link — manual device testing required.</td></tr>
+        <tr><td>MMP Interstitial</td><td>Button network interstitial detected (btn_interstitial_id present). A real device will see the app-open prompt; headless browsers fall through to the web fallback.</td></tr>
+        <tr><td>Mobile Web</td><td>Tracking link resolved to a standard web landing page with a mobile user agent.</td></tr>
+        <tr><td>No Redirect</td><td>Tracking link never redirected beyond the impact domain. Mobile redirect may not be configured for this program.</td></tr>
       </tbody>
     </table>
 
@@ -515,10 +545,11 @@ MySQL table format:
     <table class="doc-table">
       <thead><tr><th>Setting</th><th>Default</th><th>Description</th></tr></thead>
       <tbody>
-        <tr><td>Concurrency</td><td>2</td><td>URLs processed simultaneously. Higher is faster but may trigger bot detection on some sites.</td></tr>
+        <tr><td>Concurrency</td><td>2</td><td>URLs processed simultaneously. Higher is faster but may trigger bot detection.</td></tr>
         <tr><td>Wait (ms)</td><td>20000</td><td>Time to wait after page load before capturing results. Increase for slow sites or slow-loading tags.</td></tr>
-        <tr><td>Retries</td><td>1</td><td>Number of retry attempts per URL on navigation failure. Only the final result is shown.</td></tr>
-        <tr><td>Delay (ms)</td><td>2000</td><td>Pause between URL batches, plus up to 1 second of random jitter. Helps avoid bot detection patterns.</td></tr>
+        <tr><td>Retries</td><td>1</td><td>Retry attempts per URL on navigation failure. Only the final result is shown.</td></tr>
+        <tr><td>Delay (ms)</td><td>2000</td><td>Pause between URL batches, plus up to 1s random jitter. Reduces bot detection patterns.</td></tr>
+        <tr><td>Device</td><td>Both</td><td>Mobile mode only. iOS only, Android only, or both simultaneously.</td></tr>
       </tbody>
     </table>
 
@@ -532,28 +563,36 @@ MySQL table format:
   <div class="doc-content">
     <h2>About <em>Tracking Validator</em></h2>
 
-    <p>An internal TSE tool that automates the evaluation of impact.com tracking integrations at scale. It navigates to each tracking link using a headless Chromium browser, follows the full redirect chain, and validates the tracking implementation against a comprehensive set of checks.</p>
+    <p>An internal TSE tool that automates the evaluation of impact.com tracking integrations at scale. It crawls tracking links using a real headless Chromium browser — the same engine that powers Google Chrome — follows the full redirect chain, and validates the tracking implementation against a comprehensive set of checks.</p>
 
-    <p>Built to replace manual link-by-link inspection — a single run can validate hundreds of programs in minutes, surface integration issues, and generate actionable remediation guidance without leaving the app.</p>
+    <p>Built to replace manual link-by-link inspection. A batch of hundreds of programs that would take hours to check manually runs in minutes, surfaces integration issues, and generates actionable remediation guidance without leaving the app.</p>
 
     <h3>How it works</h3>
     <ul class="about-list">
-      <li><span><strong>Tag detection &amp; redirect chain analysis</strong> — navigates each tracking link in an isolated Chromium session, follows every redirect hop, and captures the full chain including server IPs. Detects UTT library load, Identify call firing, Shopify PageLoad requests, web pixel console signals, Traffic Guard, profile redirect (ojrq.net), and child/parent program routing.</span></li>
-      <li><span><strong>Cookie extraction</strong> — captures IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, and brwsr after page load. The incognito session means brwsr will not be present — the Profile Redirect signal confirms the ojrq.net lookup was attempted.</span></li>
-      <li><span><strong>Identity enrichment</strong> — after the crawl completes, queries impact.com's identity service using the IR_PI cookie (PRO lookup). Falls back to CLI (CustomProfileId) lookup if no PRO node is found — relevant for Shopify Plugin integrations. Up to 15 lookups run in parallel, retrying every 30 seconds for a maximum of ~5 minutes. Use the <strong>Stop Identity</strong> button if enrichment is taking too long — resolved rows are preserved, unresolved rows are marked N/A.</span></li>
-      <li><span><strong>Remediation engine</strong> — a priority-ordered rule engine evaluates each completed result and generates a specific, actionable recommendation. Rules cover integration type detection failures, UTT placement issues, Shopify plugin misconfiguration, click ID propagation failures, Traffic Guard interference, and identity graph issues.</span></li>
+      <li><span><strong>Desktop crawl</strong> — each tracking link runs in a dedicated headless Chromium context (isolated, incognito, no prior state). Follows every redirect hop, intercepts network requests, executes JavaScript, captures cookies and page state after a configurable wait, then runs a full suite of checks. Results include integration type, verbatim UTT/Shopify payload from the network, click ID propagation, cookies, and redirect chain.</span></li>
+      <li><span><strong>Mobile crawl</strong> — same Chromium engine with iOS Safari and Android Chrome user agents. Traces how the tracking link routes mobile users — detecting MMP handoffs (AppsFlyer, Branch, Adjust, Kochava, Singular, Tune, Button), app-store redirects, mobile web landings, and no-redirect cases. iOS and Android crawl in parallel per URL.</span></li>
+      <li><span><strong>Identity enrichment</strong> — runs asynchronously after a desktop crawl. Queries impact.com's identity service using the IR_PI cookie (PRO lookup), falling back to CLI if no PRO node is found. Up to 15 lookups run in parallel, retrying every 30s for ~5 minutes. Use <strong>Stop Identity</strong> to halt early — resolved rows are preserved, unresolved rows marked N/A.</span></li>
+      <li><span><strong>Remediation engine</strong> — a priority-ordered rule engine evaluates each completed result and generates a specific, actionable recommendation. Rules cover UTT placement and load order, Shopify plugin configuration, click ID propagation failures, Traffic Guard interference, identity graph issues, and mobile redirect configuration.</span></li>
     </ul>
 
-    <h3>What it checks</h3>
+    <h3>What it checks — Desktop</h3>
     <ul class="about-list">
-      <li><span><strong>Click ID</strong> — present in final URL as a standalone parameter; whether it appears only embedded inside another parameter's value; click IDs link to the internal Event Repository showing the click's data and metadata</span></li>
-      <li><span><strong>Universal Tracking Tag</strong> — JavaScript library detection and load timing; the UTT library should be placed in <code>&lt;head&gt;</code> and the Identify call high in <code>&lt;body&gt;</code> after the library has loaded; validates Identify call path, status, CustomProfileId, CustomerId, and click ID in payload</span></li>
-      <li><span><strong>Shopify Plugin</strong> — PageLoad API request, web pixel console signal, consent API, integration source, click ID and CustomProfileId in payload</span></li>
-      <li><span><strong>Cookies</strong> — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies, brwsr</span></li>
-      <li><span><strong>Implementation method</strong> — GTM, Tealium, Segment, Adobe Launch, or direct</span></li>
-      <li><span><strong>Redirect chain</strong> — full hop-by-hop with server IP addresses, profile redirect (ojrq.net), Traffic Guard, child/parent program routing</span></li>
-      <li><span><strong>Identity graph</strong> — enrichment via identity service API; consumer ID, PRO node (click's profile ID), FPC node (first-party cookie), CLI node (CustomProfileId cookie) — confirming identity stitching end-to-end</span></li>
-      <li><span><strong>Remediation</strong> — rule-based actionable recommendations generated automatically for each result</span></li>
+      <li><span><strong>Click ID</strong> — present in final URL as a standalone parameter; embedded-only detection; <strong>↗ ER</strong> button links to the Event Repository</span></li>
+      <li><span><strong>Universal Tracking Tag</strong> — library detection and load timing; Identify call path and status; CustomProfileId, CustomerId, click ID in payload; implementation method (GTM, Tealium, Segment, Adobe Launch, direct); verbatim identify request payload</span></li>
+      <li><span><strong>Shopify Plugin</strong> — PageLoad API request and status; click ID, CustomProfileId, and CustomerId in payload; web pixel console signal; consent API; verbatim pageload request payload</span></li>
+      <li><span><strong>Cookies</strong> — IR_PI, IR_{campaign_id}, IR_gbd, click ID cookies</span></li>
+      <li><span><strong>Redirect chain</strong> — full hop-by-hop with server IPs; profile redirect (ojrq.net); Traffic Guard; child/parent program routing</span></li>
+      <li><span><strong>Identity graph</strong> — consumer ID, PRO node, FPC node, CLI node — confirming stitching end-to-end</span></li>
+    </ul>
+
+    <h3>What it checks — Mobile</h3>
+    <ul class="about-list">
+      <li><span><strong>Per-device status</strong> — PASS / WARN / FAIL / SKIP, independently for iOS and Android</span></li>
+      <li><span><strong>MMP handoff</strong> — AppsFlyer, Branch, Adjust, Kochava, Singular, Tune, Button</span></li>
+      <li><span><strong>Terminal type</strong> — App Store iOS/Android, MMP Link, MMP Interstitial, Mobile Web, No Redirect, Custom Scheme</span></li>
+      <li><span><strong>Click ID propagation</strong> — extracted from the redirect chain using device-specific, desktop, and common fallback params</span></li>
+      <li><span><strong>MMP handoff payload</strong> — verbatim URL params passed to the MMP at handoff</span></li>
+      <li><span><strong>Full redirect chain</strong> — hop-by-hop with hop type classification (impact, mmp, app-store, normal)</span></li>
     </ul>
 
     <h3>Integration Types</h3>
@@ -562,9 +601,11 @@ MySQL table format:
       <tbody>
         <tr><td>UTT</td><td>UTT tag + identify call detected; no Shopify signals</td></tr>
         <tr><td>SHOPIFY</td><td>Shopify pageload or web pixel detected; no UTT</td></tr>
-        <tr><td>Potential Hybrid</td><td>Both UTT and Shopify signals present, OR UTT using <code>_shopify_y</code> as CustomProfileId</td></tr>
-        <tr><td>ClickId Integration</td><td>Click ID found in cookie; no UTT or Shopify — may indicate CAPI or a custom integration</td></tr>
-        <tr><td>UNKNOWN</td><td>No recognisable integration signals detected — may indicate a custom or unsupported implementation</td></tr>
+        <tr><td>Potential Hybrid</td><td>Both UTT and Shopify signals present, or UTT using <code>_shopify_y</code> as CustomProfileId</td></tr>
+        <tr><td>PLA</td><td>Non-Shopify Page Load API detected</td></tr>
+        <tr><td>UTT + PLA</td><td>Both UTT identify call and a non-Shopify PLA call firing simultaneously</td></tr>
+        <tr><td>ClickId Integration</td><td>Click ID in cookie; no UTT or Shopify — may indicate CAPI or a custom integration</td></tr>
+        <tr><td>UNKNOWN</td><td>No recognisable signals — may be custom, server-side, or blocked by bot detection</td></tr>
       </tbody>
     </table>
 
@@ -572,32 +613,38 @@ MySQL table format:
     <table class="doc-table">
       <thead><tr><th>Signal</th><th>What it means</th></tr></thead>
       <tbody>
-        <tr><td>Profile Redirect</td><td>ojrq.net appeared in the redirect chain — impact's browser recognition server was contacted. When no brwsr cookie is present, impact redirects to ojrq.net to check for an existing cookie; if none is found, a fresh cookie is generated and set on the tracking domain. In isolated test sessions the cookie will not be dropped.</td></tr>
-        <tr><td>Traffic Guard</td><td>trafficguard.ai appeared in the redirect chain. If click ID is also missing from the final URL, the test partner ID (2222) was likely rejected — test with 1111 or a live link.</td></tr>
-        <tr><td>Child/Parent</td><td>A second impact tracking URL with a different campaign ID was found in the redirect chain, indicating a child program routing through a parent program. Noted for awareness — no action required.</td></tr>
-        <tr><td>CID Embedded</td><td>The click ID value was found embedded within another URL parameter (e.g. <code>sourceid=imp_{clickid}</code>) but not as a standalone parameter. The program should be configured with a dedicated <code>{clickid}</code> parameter.</td></tr>
+        <tr><td>Profile Redirect</td><td>ojrq.net appeared — impact's browser recognition server was contacted to check for an existing brwsr cookie. In isolated test sessions, the cookie will not be dropped.</td></tr>
+        <tr><td>Traffic Guard</td><td>trafficguard.ai appeared. If click ID is also missing, test partner ID (2222) was likely rejected — test with 1111 or a live link.</td></tr>
+        <tr><td>Child/Parent</td><td>A second impact tracking URL with a different campaign ID appeared — child program routing through a parent. Noted for awareness only.</td></tr>
+        <tr><td>CID Embedded</td><td>Click ID found embedded inside another parameter's value but not as a standalone parameter. Configure a dedicated <code>{clickid}</code> parameter.</td></tr>
       </tbody>
     </table>
 
     <h3>Limitations</h3>
     <ul class="about-list">
-      <li><span>Crawls run in a fresh incognito session — brwsr is set by the tracking domain as a third-party cookie, but the incognito session prevents it from being dropped</span></li>
-      <li><span>CAPTCHA-protected sites will block the headless browser — manual validation required for those results</span></li>
-      <li><span>All links use test partner ID <strong>2222</strong> — Traffic Guard may reject this for some programs; test with 1111 or a live link if this occurs</span></li>
-      <li><span>Sites with aggressive bot detection may time out or return unexpected results even when the integration is working correctly</span></li>
-      <li><span>Custom or server-side integrations (CAPI, trackConversion) are not detectable on the landing page and will appear as UNKNOWN or ClickId Integration</span></li>
-      <li><span>Stopping identity enrichment early marks unresolved rows as N/A — re-running the crawl will trigger a fresh enrichment attempt</span></li>
+      <li><span><strong>MMP deep-links</strong> — the crawler cannot follow app deep-links. Results are marked MMP Link — a real device is required to verify the final destination.</span></li>
+      <li><span><strong>Third-party cookies</strong> — crawls run in a fresh incognito session; the brwsr cookie will never be present. Use the Profile Redirect signal to confirm the brwsr lookup was attempted.</span></li>
+      <li><span><strong>CAPTCHA</strong> — sites with Cloudflare or aggressive bot detection block the desktop crawler. Results are marked SKIP. Mobile crawls are generally less affected.</span></li>
+      <li><span><strong>Server-side integrations</strong> — CAPI and trackConversion are not observable on the landing page. These appear as UNKNOWN or ClickId Integration — verify via Loggly or SQL.</span></li>
+      <li><span><strong>Landing page only</strong> — validates what fires on the initial page load. Does not validate conversion events, postback calls, or server-side attribution logic.</span></li>
+      <li><span><strong>Test partner ID</strong> — all generated links use partner ID 2222. Traffic Guard may reject this for some programs — test with 1111 or a live link.</span></li>
     </ul>
 
-    <h3>Full documentation</h3>
-    <p>Installation instructions, release notes, and further documentation are available on the <a href="https://fastshoes.co.za/scott/tools/tracking_validator/" class="doc-link" id="hub-page-link">Tracking Validator download page</a>.</p>
+    <h3>Technical</h3>
+    <ul class="about-list">
+      <li><span>Built on Electron (v30), Playwright (Chromium), Node.js</span></li>
+      <li><span>Packaged as a native macOS app (arm64 and x64 DMG)</span></li>
+      <li><span>No data leaves your machine — all crawling happens locally using the bundled Chromium browser</span></li>
+      <li><span>Identity enrichment queries impact.com's identity service directly</span></li>
+      <li><span>Source: <a href="https://github.com/ImpactInc/ts-tracking-validator" class="doc-link" target="_blank">ImpactInc/ts-tracking-validator</a> (internal)</span></li>
+    </ul>
 
     <div class="about-meta">
       <span>Tracking Validator</span>
       <span>·</span>
       <span>TSE — impact.com</span>
       <span>·</span>
-      <span id="app-version">v1.0.0</span>
+      <span id="app-version">v2.0.0</span>
     </div>
   </div>
 </div>
